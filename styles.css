@@ -1531,11 +1531,25 @@ body:has(dialog[open]) { overflow: hidden; }
   /* the breakdown now owns the wide column, so drop its centred 760px cap */
   #breakdownCard .chart-wrap { max-width: none; }
   .hero__inner { flex-wrap: nowrap; }
+  /* Toolbar: keep the single slim row on desktop. The controls fit from ~1240px
+     up, but at 1024–1239px the base wrap stacked the fields into a 125px band;
+     nowrap + overflow-x lets the small excess scroll instead. */
+  .toolbar__inner {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .toolbar__inner::-webkit-scrollbar { display: none; }
+  .toolbar .field { flex: 0 0 auto; }
+  /* natural width (capped at the 420px design width) — without this the base
+     flex: 1 1 260px shrink squeezes the cluster to ~46px at 1024–1100px */
+  #includeWrap { flex: 0 0 auto; }
 }
 
-@media (max-width: 619px) {
-  /* Slim sticky toolbar: one horizontally scrollable row instead of a tall
-     wrapped stack — every control keeps its natural width. */
+/* Slim sticky toolbar: one horizontally scrollable row instead of a tall
+   wrapped stack — every control keeps its natural width. Phones (<=619px) ship
+   this as before; 620–1023px previously fell back to the 125–185px wrap. */
+@media (max-width: 1023px) {
   .toolbar__inner {
     flex-wrap: nowrap;
     align-items: center;
@@ -1545,10 +1559,19 @@ body:has(dialog[open]) { overflow: hidden; }
     scrollbar-width: none; /* the swipe affordance is enough on a phone */
   }
   .toolbar__inner::-webkit-scrollbar { display: none; }
-  .field { flex: 0 0 auto; }
+  .toolbar .field { flex: 0 0 auto; }
   .select { width: auto; }
   #includeWrap { flex: 0 0 auto; max-width: none; }
   .file-label { max-width: 150px; }
+}
+
+@media (min-width: 620px) and (max-width: 1023px) {
+  /* Tablet: cap the include/exclude cluster at the desktop width so a long
+     #filterNote/chip list wraps inside the row instead of stretching it. */
+  #includeWrap { max-width: 420px; }
+}
+
+@media (max-width: 619px) {
   .card { padding: 18px; }
   .dropzone { padding: 30px 18px; }
   #breakdownCard .chart-wrap,
