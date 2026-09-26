@@ -139,7 +139,7 @@ memory; nothing is rewritten.
 - **Data stays in the browser.** Parsed results are cached in `localStorage` under the key **`ibkr-v1`**
   (only for files ≤ 2 MB) so a refresh doesn't lose your session. `Clear` in the header wipes the
   cache, the file input and all state.
-- **Never committed.** `csv/`, `data/`, and `*.csv` / `*.CSV` are gitignored. `csv/Monthly_Realised_PnL.csv`
+- **Never committed.** `data/` and `*.csv` / `*.CSV` are gitignored. `data/Monthly_Realised_PnL.csv`
   is a local working copy and is **not** in version control.
 - **Never deploy with real data.** If this is hosted anywhere (GitHub Pages, etc.), ship the code only —
   no statements, no cached exports, no screenshots of real P&L.
@@ -156,9 +156,8 @@ memory; nothing is rewritten.
 | `index.html` | Markup contract: header, month/year chips, chart cards, table, `#postedToggle`, `#excludeInput` / `#excludeChips`, `#fxInput` / `#fxReset` / `#fxBadge`, `#clearBtn`, file input. |
 | `styles.css` | All styling and design tokens (CSS custom properties in `:root`); no external assets. |
 | `app.js` | CSV parser (Flex + Activity Statement), month aggregation, root-symbol exclude filter, USD/AUD rate chain, rendering. Exposes `window.IBKR` for debugging. |
-| `csv/` | Your local IBKR exports (gitignored). |
-| `data/` | Scratch space for local data (gitignored). |
-| `.gitignore` | Keeps `*.csv`, `csv/*`, `data/*` and env/log noise out of git. |
+| `data/` | Your local IBKR exports and scratch space (gitignored). |
+| `.gitignore` | Keeps `*.csv`, `data/*` and env/log noise out of git. |
 | `README.md` | This file. |
 
 ## 6. Verify it yourself
@@ -172,7 +171,7 @@ grep -nE "https?://" app.js
 #   is ever interpolated into one
 
 # Your CSV must be ignored by git:
-git check-ignore -v csv/Monthly_Realised_PnL.csv
+git check-ignore -v data/Monthly_Realised_PnL.csv
 
 # Confirm nothing sensitive is staged before committing:
 git status --short

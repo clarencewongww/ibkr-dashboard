@@ -13,8 +13,6 @@ output/
 # IBKR private data - never commit real data
 data/*
 !data/.gitkeep
-csv/*
-!csv/.gitkeep
 *.csv
 *.CSV
 
