@@ -49,7 +49,9 @@
              #tickerModal <dialog> · #assetToggle fieldset (radios name="assetToggle",
              value="all"|"options"|"stock") hides the other leg kind dashboard-wide and
              applies live · #tickerSearch filter input · #tickerSearchClear button
-             empties that filter · #tickerList is a DIV and receives label.ticker-row rows
+             empties that filter · #tickerCount live row count (shown / total while
+             searching, hidden while the list is empty) · #tickerList is a DIV and
+             receives label.ticker-row rows
              (symbol · P&L · select[data-scope] All/Options only/Stock only ·
              include/exclude checkboxes) · #tickerApply / #tickerClear / #tickerClose
              buttons. Row checkboxes + scopes stay pending until Apply; Clear resets them
@@ -57,9 +59,10 @@
              native (an open-attribute fallback takes over when showModal is unavailable).
              .ticker-list/.ticker-row styles live in styles.css.
              #includeChips — chip contract: button.chip[data-ticker] with
-             aria-pressed="true" (its title names the scope); click removes the include.
-             #includeWrap groups the Tickers button with those chips and #filterNote
-             (aria-live="polite" summary of the active ticker filters, scopes included)
+             aria-pressed="true" (its label/title name the scope); click removes the
+             include. #includeWrap groups the Tickers button with those chips and
+             #filterNote (aria-live="polite" summary of the active ticker filters,
+             scopes included)
   Basis      #postedToggle  fieldset; radios name="postedToggle" value="posted"|"accrual".
              app.js listens for "change" on the fieldset (radios bubble) and reads
              input[name="postedToggle"]:checked → value "accrual" = accrual interest.
@@ -581,6 +584,9 @@
            autocomplete="off" spellcheck="false">
     <button id="tickerSearchClear" class="search-clear" type="button" aria-label="Clear search">×</button>
   </div>
+  <!-- live row count ("12", or "3 / 12" while #tickerSearch has a query); app.js hides it
+       while the list is empty so the .ticker-list empty hint stands alone -->
+  <p id="tickerCount" class="ticker-count" aria-live="polite" hidden></p>
   <!-- column key for the rows app.js renders (label.ticker-row: symbol · P&L ·
        scope select · In/Ex boxes); hidden while the list is empty -->
   <div class="ticker-head" aria-hidden="true">

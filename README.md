@@ -126,9 +126,14 @@ drill-down. Exclusions are set from the **Tickers** modal only:
   and persist the list; **Clear** drops it again.
 - Matching is case-insensitive and uses the **root symbol**: OCC-style padded option symbols are
   trimmed at the first space, so excluding `AMD` also hides `AMD   260220P00185000`.
+- **Scope.** Each row also carries a **Scope** select — *All* (the default), *Options only* or
+  *Stock only*. A scoped exclude drops only that leg kind — `AMD` + *Stock only* hides AMD's
+  stock trades while its option legs keep counting, and vice versa. Scopes persist under
+  **`ibkr-exclude-scope-v1`** and are dropped whenever their symbol leaves the exclude list.
 - The list persists in `localStorage` under **`ibkr-exclude-v1`** and survives refreshes.
-- The toolbar note (`#filterNote`) summarises the active filters — `Including only A, B ·
-  Excluding C` — and stays hidden while both lists are empty.
+- The toolbar note (`#filterNote`) summarises the active filters — `Including only AMD
+  (Options only), B · Excluding C (Stock only) · Stock only` — and stays hidden while
+  everything is default.
 - Ticker-less cash rows (e.g. broker interest) are never excluded.
 - Excluding only hides instruments from the display; **concatenated files still double-count** if
   you load overlapping periods — excluded or not, load each month once.
@@ -140,17 +145,28 @@ matching and persisted in `localStorage` under **`ibkr-include-v1`**:
 
 - **Allow-list first.** While the include list is non-empty, only listed roots aggregate into the
   KPIs, both charts, the month table and the drill-down; an empty list includes everything.
-- **Exclude wins.** When a ticker is caught by both filters, exclude always drops it.
+- **Exclude wins, per kind.** When a ticker is caught by both filters, each leg kind survives only
+  if the include scope allows it **and** no exclude covers it. An unscoped exclude drops every leg
+  of its symbol; a scoped one drops only its kind — include `AMD` *Options only* together with
+  exclude `AMD` *Stock only* keeps AMD's options, while a plain exclude of `AMD` beats any scope.
+- **Scope.** *Include* + *Options only* keeps only that symbol's option legs (its stock legs and
+  every other symbol are dropped). Scopes persist under **`ibkr-include-scope-v1`**, are pruned
+  when their symbol leaves the include list, and show up on the chip (`AMD (Options only)`) and
+  in `#filterNote`.
+- **Global asset filter.** The modal's **All / Options only / Stock only** radios
+  (`#assetToggle`) hide the other leg kind dashboard-wide and apply **live** — no Apply needed.
+  The choice is **session-only** (never written to `localStorage`); **Clear** resets it to *All*.
 - **Tickers modal.** The **Tickers (n)** button opens a `<dialog>` listing every traded root
-  (largest |P&L| first, plus any manual pick) with symbol, P&L, and **In / Ex** checkboxes that are
-  mutually exclusive per row — checking one unchecks its twin. **Apply** commits and persists both
-  lists, **Clear** drops both filters and empties the search box without closing the modal, and
-  **Close** / Esc / backdrop discards unapplied changes (state is the source of truth).
+  (largest |P&L| first, plus any manual pick) with symbol, P&L, a **Scope** select and
+  **In / Ex** checkboxes that are mutually exclusive per row — checking one unchecks its twin.
+  **Apply** commits and persists the lists *and* their scopes, **Clear** drops both filters,
+  both scope maps and the global asset choice and empties the search box without closing the
+  modal, and **Close** / Esc / backdrop discards unapplied changes (state is the source of truth).
 - **Search.** The modal's filter box is a case-insensitive substring match over the rendered
   symbols; the count reads `shown / total` while a query is active, and the **×** button
   (`#tickerSearchClear`) clears the query.
-- **Chips.** Every included root appears as a pressed chip next to the button; click a chip to drop
-  that ticker from the allow-list.
+- **Chips.** Every included root appears as a pressed chip next to the button, labelled with its
+  scope while scoped (`AMD (Options only)`); click a chip to drop that ticker from the allow-list.
 - **Jump back.** The Monthly summary header carries a **Tickers ↑** shortcut (`#toTopTickers`) that
   scrolls the toolbar into view and focuses the modal button.
 - **Ticker-less cash rows** (e.g. broker interest) have no root symbol, so **include never filters
@@ -210,9 +226,9 @@ memory; nothing is rewritten.
 
 | Path | Role |
 | --- | --- |
-| `index.html` | Markup contract: header, month/year chips, chart cards, table, `#postedToggle`, `#tickerBtn` / `#tickerSearchClear` / `#filterNote` / `#toTopTickers`, `#fxInput` / `#fxReset` / `#fxBadge`, legend income popover `#incomeInfo` / `#incomeHelp`, `#clearBtn`, file input. |
+| `index.html` | Markup contract: header, month/year chips, chart cards, table, `#postedToggle`, `#tickerBtn` / `#tickerSearchClear` / `#tickerCount` / `#filterNote` / `#toTopTickers`, `#assetToggle` asset radios, `#fxInput` / `#fxReset` / `#fxBadge`, legend income popover `#incomeInfo` / `#incomeHelp`, `#clearBtn`, file input. |
 | `styles.css` | All styling and design tokens (CSS custom properties in `:root`); no external assets. |
-| `app.js` | CSV parser (Flex + Activity Statement), month aggregation, root-symbol exclude filter, USD/AUD rate chain, rendering. Exposes `window.IBKR` for debugging. |
+| `app.js` | CSV parser (Flex + Activity Statement), month aggregation, root-symbol include/exclude filter with per-kind scopes, session-only asset filter, USD/AUD rate chain, rendering. Exposes `window.IBKR` for debugging. |
 | `data/` | Your local IBKR exports and scratch space (gitignored). |
 | `.gitignore` | Keeps `*.csv`, `data/*` and env/log noise out of git. |
 | `README.md` | This file. |

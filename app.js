@@ -19,8 +19,8 @@
  * input[name="currencyToggle"] USD/AUD switch, the interest card (interestSvg
  * interestTip kpiIntTotal kpiIntAvgDay kpiIntBest kpiIntShare interestBody),
  * incomeInfo incomeHelp (the breakdown legend .info/.info-tip pair),
- * the ticker picker (tickerModal assetToggle tickerSearch tickerList tickerApply
- * tickerClear — per-symbol scope selects plus the global asset toggle)
+ * the ticker picker (tickerModal assetToggle tickerSearch tickerCount tickerList
+ * tickerApply tickerClear — per-symbol scope selects plus the global asset toggle)
  * and the [data-tab]-driven Overview/Interest tabs. All of those are optional:
  * every lookup is null-safe so the script survives an older shell.
  *
@@ -408,7 +408,9 @@ const IBKR = (function () {
    * opts.include / opts.exclude (root symbols, default []) keep/hide matching trades; a non-empty
    * include means "only these". opts.includeScope / opts.excludeScope ({ SYM: 'options'|'stock' })
    * narrow a symbol's entry to one leg kind, and opts.globalAsset ('all'|'options'|'stock') hides
-   * the other kind for every ticker. Excludes win over includes, per-kind when scoped.
+   * the other kind for every ticker. Excludes win over includes, per kind: an unscoped exclude
+   * drops every leg of its symbol, a scoped one only that kind, so include AMD (Options only) +
+   * exclude AMD (Stock only) keeps AMD's options while its stock legs are dropped.
    * Ticker-less cash rows are never filtered by any of these (they have no root symbol to match).
    */
   function aggregateByMonth(trades, cash, options) {
@@ -508,6 +510,12 @@ const IBKR = (function () {
     el.textContent = name;
     el.title = name;
   }
+  /**
+   * Idempotent listener binding: wire() may run twice (init + the late-shell load
+   * fallback), so the dedupe key is event + handler name. Handlers must therefore be
+   * named top-level functions — an anonymous handler would key as "handler" and
+   * silently collide with the next one on the same element.
+   */
   function listen(el, ev, fn) {
     if (!el) return;
     let set = boundEvents.get(el);
@@ -600,6 +608,9 @@ const IBKR = (function () {
   /** setExclude(['AMD', ...]) / setExclude('AMD,MSFT') — normalizes, persists, re-renders. */
   function setExclude(list) {
     state.exclude = normalizeSymbols(list);
+    // A scope only means something next to its list entry: prune on every removal path
+    // (chips, API), not just on restore, or a stale scope resurrects the ticker row.
+    state.excludeScope = pruneScope(state.excludeScope, state.exclude);
     saveFilterState();
     renderAll();
     renderTickerList(); // keep an open picker's checkboxes in sync
@@ -609,6 +620,7 @@ const IBKR = (function () {
   /** setInclude(['IWM', ...]) / setInclude('IWM,AMD') — non-empty means "only these roots". */
   function setInclude(list) {
     state.include = normalizeSymbols(list);
+    state.includeScope = pruneScope(state.includeScope, state.include);
     saveFilterState();
     renderAll();
     renderTickerList();
@@ -1107,6 +1119,7 @@ const IBKR = (function () {
     asset: ['assetToggle', 'tickerAssetToggle'],
     search: ['tickerSearch', 'tickerFilter'],
     searchClear: ['tickerSearchClear', 'tickerClearSearch'],
+    count: ['tickerCount', 'tickerListCount'],
     note: ['filterNote', 'tickerFilterNote'],
     toTop: ['toTopTickers', 'tickersToTop'],
     body: ['tickerList', 'tickerListBody', 'tickerRows', 'tickerBody'],
@@ -1310,15 +1323,14 @@ const IBKR = (function () {
     return s === 'all' ? sym : sym + ' (' + scopeLabel(s) + ')';
   }
 
-  /** #includeChips — every included root as a pressed chip; click removes it from the filter. */
+  /** #includeChips — every included root as a pressed chip; the label carries its scope. */
   function renderIncludeChips() {
     const el = byId('includeChips');
     if (!el) return;
     el.innerHTML = state.include.map(sym => {
-      const scope = normalizeScope(state.includeScope[sym]);
-      const scopeTag = scope === 'all' ? '' : ' (' + scopeLabel(scope) + ')';
-      const title = `Included${scopeTag} in every total — click to remove ${sym}`;
-      return `<button type="button" class="chip" data-ticker="${esc(sym)}" aria-pressed="true" title="${esc(title)}">${esc(sym)}</button>`;
+      const label = scopedSymbol(sym, state.includeScope[sym]);
+      const title = `Including ${label} in every total — click to remove`;
+      return `<button type="button" class="chip" data-ticker="${esc(sym)}" aria-pressed="true" title="${esc(title)}">${esc(label)}</button>`;
     }).join('');
   }
 
@@ -1632,8 +1644,11 @@ const IBKR = (function () {
       row.hidden = !match;
       if (match) shown++;
     }
-    const count = pickById(['tickerCount', 'tickerListCount']);
-    if (count) count.textContent = query ? `${shown} / ${rows.length}` : `${rows.length}`;
+    const count = pickById(TICKER_IDS.count);
+    if (count) {
+      count.textContent = query ? `${shown} / ${rows.length}` : String(rows.length);
+      count.hidden = rows.length === 0; // no tickers yet — the list owns the empty hint
+    }
   }
 
   /** #tickerSearchClear — empty the modal's filter box, repaint the rows and keep typing. */
