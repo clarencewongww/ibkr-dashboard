@@ -480,20 +480,22 @@ const IBKR = (function () {
     if (!tip || !target || !target.getBoundingClientRect) return;
     const text = target.getAttribute && target.getAttribute('data-tip');
     if (!text) return;
+    // Unhide before measuring: offsetParent is null while an element is hidden,
+    // which would fall back to the viewport origin and misplace the first hover.
+    // #chartTip keeps its layout (styles.css: display:block + opacity/visibility),
+    // so only the hidden attribute flips it between visible and invisible.
+    tip.textContent = text;
+    tip.hidden = false;
     const host = tip.offsetParent && tip.offsetParent.getBoundingClientRect ? tip.offsetParent : null;
     const base = host ? host.getBoundingClientRect() : { left: 0, top: 0 };
     const r = target.getBoundingClientRect();
-    tip.textContent = text;
-    tip.hidden = false;
-    tip.style.display = 'block';
     tip.style.left = (r.left - base.left + r.width / 2) + 'px';
     tip.style.top = (r.top - base.top) + 'px';
   }
   function hideTip() {
     const tip = byId('chartTip');
     if (!tip) return;
-    tip.hidden = true;
-    tip.style.display = 'none';
+    tip.hidden = true; // stays laid out, styles.css fades it out via opacity/visibility
   }
   function tipTarget(e) {
     const t = e.target;
