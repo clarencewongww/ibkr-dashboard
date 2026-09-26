@@ -37,6 +37,9 @@
                         opens #csvHelpModal (native <dialog>, same wiring as
                         #tickerModal: app.js calls showModal/close, with an
                         open-attribute fallback for engines without showModal)
+                        — and so does #heroCsvInfo, the round "i" in the hero
+                        subtitle (with its own #heroCsvHelp .info-tip; focus
+                        returns to whichever opener was used)
              #yearSelect app.js owns the <option> list ("all" = All years)
              #fileLabel  file name text ("No file selected" / "<name> (cached)")
              these controls now live in the .toolbar band (moved off the dark hero
@@ -90,8 +93,9 @@
              sits in the drill-down card header; the Monthly summary always lists
              every visible month (year filter only), the drill-down follows the
              picked month (a pick also snaps #yearSelect to that month's year)
-             #toTopTickers — "Tickers ↑" in the Monthly summary header: scrolls
-             #tickerBtn into view, focuses it and flashes .glow for 2.5s
+             #toTopTickers — "Tickers ↑" in the Monthly summary header, and
+             #tickersToTop — the same shortcut in the drill-down header: both
+             scroll #tickerBtn into view, focus it and flash .glow for 2.5s
   Chart      #chartSvg — 720x300 viewBox; app.js re-renders inside it and re-declares
                         the same viewBox, so the shell must keep the 720x300 box.
              #chartTip  — toggled with the hidden attribute, positioned by app.js
@@ -145,7 +149,17 @@
       </span>
       <div class="hero__copy">
         <h1 class="hero__title">IBKR Realised P&amp;L</h1>
-        <p class="hero__sub">Monthly realised P&amp;L from your Activity Statement CSV.</p>
+        <p class="hero__sub">Monthly realised P&amp;L from your Activity Statement CSV.
+          <span class="hero__sub-note">
+            <!-- Same help dialog as #csvHelpBtn: app.js's click delegation opens
+                 #csvHelpModal, Esc/close return focus to this button. -->
+            <button id="heroCsvInfo" class="info" type="button"
+                    aria-haspopup="dialog" aria-controls="csvHelpModal"
+                    aria-describedby="heroCsvHelp"
+                    aria-label="How to export the CSV from IBKR">i</button>
+            <span id="heroCsvHelp" class="info-tip" role="tooltip">Export the Activity Flex Query as CSV — click for the field-by-field steps.</span>
+          </span>
+        </p>
       </div>
     </div>
   </div>
@@ -344,11 +358,14 @@
       </article>
     </section>
 
-    <!-- Desktop ≥1024px: two explicit columns — left (1.55fr) = chart + income
-         breakdown, right (1fr) = monthly summary + drill-down; styles.css places
-         the cards by id/class. DOM order is chart → breakdown → summary → drill,
-         so the single-column mobile layout stays graphs-first. -->
+    <!-- Desktop ≥1024px: two independent column stacks — left = chart + income
+         breakdown, right = monthly summary + drill-down (styles.css sizes the
+         columns 1.55fr / 1fr). DOM order is chart → breakdown → summary → drill,
+         so the single-column mobile layout stays graphs-first and each stack
+         keeps its own 24px rhythm. -->
     <div class="split">
+
+      <div class="split__col">
 
       <section class="card chart-card" id="chartCard" aria-labelledby="chartTitle">
         <div class="card__head">
@@ -423,6 +440,10 @@
         </ul>
       </section>
 
+      </div><!-- /left column: chart + breakdown -->
+
+      <div class="split__col">
+
       <!-- Monthly summary: always every visible month (year filter only) — the
            month chips live in the drill-down header below, and a row click is
            what selects the drill month. -->
@@ -477,6 +498,11 @@
           <!-- month filter (moved out of the Monthly summary): a pick also snaps
                the year filter to that month's year, see onChipClick in app.js -->
           <div id="monthChips" class="chips" role="group" aria-label="Filter by month"></div>
+          <!-- second Tickers shortcut — app.js binds #toTopTickers and
+               #tickersToTop to the same onToTopTickers handler -->
+          <div class="card__head-actions">
+            <button id="tickersToTop" class="btn btn--sm btn--outline" type="button">Tickers ↑</button>
+          </div>
         </div>
 
         <div class="table-scroll" role="region" aria-label="Instrument drill-down" tabindex="0">
@@ -495,6 +521,8 @@
         </div>
         <p class="table-placeholder">Pick a month in the summary to break the total down by instrument.</p>
       </section>
+
+      </div><!-- /right column: summary + drill -->
 
     </div>
   </section>
@@ -640,44 +668,66 @@
   </footer>
 </dialog>
 
-<!-- CSV export help (opened by #csvHelpBtn beside Load CSV). Same native <dialog>
-     contract as #tickerModal: app.js drives showModal()/close(), Esc + backdrop are
-     native, and the open-attribute fallback covers engines without showModal. The
-     steps mirror README §1. -->
+<!-- CSV export help (opened by #csvHelpBtn beside Load CSV and by #heroCsvInfo in
+     the hero subtitle). Same native <dialog> contract as #tickerModal: app.js
+     drives showModal()/close(), Esc + backdrop are native, and the open-attribute
+     fallback covers engines without showModal. The steps mirror README §1. -->
 <dialog id="csvHelpModal" class="modal modal--help" aria-labelledby="csvHelpTitle">
   <h2 class="modal__title" id="csvHelpTitle">Get the CSV from IBKR</h2>
   <ol class="help-steps">
     <li>
       <strong>Flex Query (preferred).</strong> Log in to Client Portal →
-      <strong>Performance &amp; Reports</strong> → <strong>Flex Queries</strong> → open
-      (or create) the <strong>Activity Flex Query</strong> named
+      <strong>Performance &amp; Reports</strong> → <strong>Flex Queries</strong> →
+      <strong>+</strong> and create an <strong>Activity Flex Query</strong> named
       <code>Monthly_Realised_PnL</code>.
     </li>
     <li>
-      Include these sections: <strong>Trades</strong>, <strong>Cash</strong>,
-      <strong>InterestAccruals</strong>, <strong>CashReport</strong> and
-      <strong>Realized Base</strong> (the <em>Realized/Unrealized P&amp;L</em> section
-      with its currency set to <em>Base</em>).
+      <strong>Add these sections and fields</strong> (Level of Detail:
+      <em>Executions</em> for Trades):
+      <ul class="help-fields">
+        <li><strong>Trades</strong> — 11 fields: <code>FXRateToBase</code>,
+          <code>AssetClass</code>, <code>Symbol</code>, <code>TradeDate</code>,
+          <code>Quantity</code>, <code>TradePrice</code>, <code>Proceeds</code>,
+          <code>IBCommission</code>, <code>Notes/Codes</code>, <code>CostBasis</code>,
+          <code>FifoPnlRealized</code>.</li>
+        <li><strong>Cash Transactions</strong> — 4 fields: <code>Description</code>,
+          <code>Date/Time</code>, <code>Amount</code>, <code>Type</code>.</li>
+        <li><strong>Interest Accruals</strong> — 7 fields: <code>CurrencyPrimary</code>,
+          <code>FromDate</code>, <code>ToDate</code>, <code>StartingAccrualBalance</code>,
+          <code>InterestAccrued</code>, <code>AccrualReversal</code>,
+          <code>EndingAccrualBalance</code>.</li>
+        <li><strong>Cash Report</strong> — select all columns (detection only).</li>
+        <li><strong>Realized/Unrealized P&amp;L</strong> — currency <em>Base</em>,
+          8 fields: <code>AssetClass</code>, <code>Symbol</code>,
+          <code>RealizedShortTermProfit</code>, <code>RealizedShortTermLoss</code>,
+          <code>RealizedLongTermProfit</code>, <code>RealizedLongTermLoss</code>,
+          <code>TotalRealizedPnl</code>, <code>TotalUnrealizedPnl</code>
+          (detection only).</li>
+      </ul>
     </li>
     <li>
-      Set <strong>Format: CSV</strong> and <strong>Period: Last Month</strong>, then
-      <strong>Run</strong> / <strong>Download</strong> the file and save it in this
-      dashboard's <code>data/</code> folder.
+      <strong>General Configuration.</strong> Format <strong>CSV</strong>, Date Format
+      <strong>yyyy-MM-dd</strong>, and switch <strong>Include Column Headers</strong>
+      and <strong>Section Code</strong> <strong>ON</strong>.
     </li>
     <li>
-      <strong>Fallback — Activity Statement.</strong> Reports → <strong>Statements</strong> →
-      <strong>Activity</strong>, pick the monthly period and download the CSV; the parser
-      understands both layouts.
+      <strong>Save &amp; run.</strong> Save the query, set <strong>Period: Year to
+      Date</strong>, then <strong>Run</strong> / <strong>Download</strong> the file and
+      save it in this dashboard's <code>data/</code> folder.
+    </li>
+    <li>
+      <strong>Fallback &amp; freshness.</strong> No Flex Query? Reports →
+      <strong>Statements</strong> → <strong>Activity</strong>, pick the monthly period and
+      download the CSV; the parser understands both layouts. IBKR can take up to
+      <strong>5 business days</strong> after month-end to finalise the previous month, and a
+      Flex Query cannot include the current trading day — re-run once the month has closed.
+      The file is parsed in this browser only: <strong>nothing is uploaded</strong> and
+      nothing leaves your machine.
     </li>
   </ol>
   <p class="help-note">
-    <strong>Freshness.</strong> IBKR can take up to 5 business days after month-end to finalise
-    the previous month, and Flex Queries cannot include the current trading day — re-run once
-    the month has closed.
-  </p>
-  <p class="help-note">
-    <strong>Privacy.</strong> The file is parsed in this browser only: nothing is uploaded and
-    nothing leaves your machine.
+    <strong>Extra columns are fine.</strong> The parser keys off the sections above and ignores
+    anything else, so a wider export still loads. The same walkthrough lives in README §1.
   </p>
   <footer class="modal__actions">
     <button id="csvHelpClose" class="btn btn--outline" type="button">Close</button>

@@ -142,7 +142,18 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 .stack { display: grid; gap: 16px; }
 
+/* Overview split: two independent column stacks so a tall summary can never
+   stretch the chart's row — the breakdown always sits one --gap under the
+   chart. DOM order (chart → breakdown → summary → drill) is the mobile
+   single-column order; ≥1024px the columns sit side by side. */
 .split { display: grid; gap: var(--gap); }
+
+.split__col {
+  display: grid;
+  gap: var(--gap);
+  align-content: start;
+  min-width: 0;
+}
 
 /* ----------------------------------------------------------------- tabs --- */
 /* page-level view switcher — same pill language as .segmented */
@@ -205,7 +216,9 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 /* ----------------------------------------------------------------- hero --- */
 .hero {
   position: relative;
-  overflow: hidden;
+  /* visible: .hero::after is inset:0 so nothing needs clipping — and the subtitle
+     "i" tooltip must be able to paint past the hero's box */
+  overflow: visible;
   background: var(--hero);
   color: #fff;
   padding-block: 18px 20px; /* compact: controls live in .toolbar now */
@@ -263,10 +276,42 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   color: rgba(255, 255, 255, .72);
 }
 
-.field { display: grid; gap: 6px; }
+/* hero subtitle: inline "i" (#heroCsvInfo) that opens #csvHelpModal — same .info
+   language inverted for the dark gradient. Its #heroCsvHelp tip opens upward,
+   inside the hero, so it never fights the sticky toolbar's stacking order;
+   app.js clamps it horizontally on reveal (placeHeroCsvTip) like #basisInfo. */
+.hero__sub-note {
+  position: relative;
+  display: inline-flex;
+  vertical-align: -3px;
+  margin-left: 2px;
+}
+
+.hero .info {
+  border-color: rgba(255, 255, 255, .34);
+  background: rgba(255, 255, 255, .10);
+  color: rgba(255, 255, 255, .78);
+}
+
+.hero .info:hover,
+.hero .info:focus-visible {
+  border-color: var(--teal);
+  color: var(--teal);
+}
+
+.hero .info-tip {
+  top: auto;
+  bottom: calc(100% + 8px);
+  background: var(--card);
+  color: var(--ink);
+  border: 1px solid var(--border);
+}
+
+.field { display: grid; gap: 4px; }
 
 .field__label {
-  font-size: 11px;
+  font-size: 10px;
+  line-height: 1.2;
   font-weight: 600;
   letter-spacing: .08em;
   text-transform: uppercase;
@@ -286,12 +331,13 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 40px;
-  padding: 8px 16px;
+  min-height: 32px;
+  padding: 6px 14px;
   border: 1px solid transparent;
   border-radius: var(--radius);
   background: transparent;
   font-size: 14px;
+  line-height: 1.25;
   font-weight: 600;
   cursor: pointer;
   text-decoration: none;
@@ -324,17 +370,17 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 .btn--outline:hover { border-color: var(--teal); color: var(--teal-dark); background: var(--surface); }
 
-/* compact variant: the summary-header ticker shortcut and similar tight spots */
+/* compact variant: the summary/drill-header ticker shortcuts and similar tight spots */
 .btn--sm {
-  min-height: 30px;
-  padding: 4px 12px;
+  min-height: 26px;
+  padding: 3px 10px;
   font-size: 12.5px;
 }
 
 .select {
   appearance: none;
-  min-height: 40px;
-  padding: 8px 38px 8px 12px;
+  min-height: 32px;
+  padding: 6px 34px 6px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background-color: var(--card);
@@ -342,6 +388,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   background-repeat: no-repeat;
   background-position: right 12px center;
   font-size: 14px;
+  line-height: 1.25;
   font-weight: 600;
   color: var(--ink);
   cursor: pointer;
@@ -352,13 +399,14 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 /* text input — ticker search (#tickerSearch) and the manual FX rate (#fxInput) */
 .input {
   width: 100%;
-  min-height: 40px;
-  padding: 8px 12px;
+  min-height: 32px;
+  padding: 6px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--card);
   color: var(--ink);
   font-size: 14px;
+  line-height: 1.25;
   font-variant-numeric: tabular-nums;
 }
 
@@ -383,14 +431,23 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 /* -------------------------------------------------------------- toolbar --- */
 /* Import + view controls, moved off the dark hero onto the light surface.
    The hero-flavoured rules above (white labels, ghost buttons, inverted FX
-   input) are scoped back to the toolbar here; ids are unchanged. */
+   input) are scoped back to the toolbar here; ids are unchanged.
+   Slim + sticky: 8px block padding keeps the band ~60px tall; z-index 15 sits
+   under the footer (20) and the dialogs but above every card. */
 .toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 15;
   background: var(--card);
   border-bottom: 1px solid var(--border);
-  padding-block: 12px;
+  padding-block: 8px;
+  box-shadow: 0 4px 12px rgba(21, 25, 40, .06);
 }
 
 .toolbar__inner {
+  position: relative; /* containing block for the .visually-hidden inputs/legends in
+                         the row: without it their absolute boxes park outside the
+                         scroller (mobile nowrap) and widen the page's scroll area */
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
@@ -529,7 +586,9 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 .card__head--lead { justify-content: flex-start; }
 .card__head--lead .card__icon { margin-top: 2px; }
 
-/* card-head action cluster (basis toggle + its info button) */
+/* card-head action cluster (basis toggle + its info button) — margin-left:auto
+   keeps it right-aligned in heads that use justify-content: flex-start
+   (#drillCard's "Tickers ↑") and is a no-op in space-between heads */
 .card__head-actions {
   position: relative; /* anchors the #basisHelp .info-tip popover */
   display: flex;
@@ -537,6 +596,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   align-items: center;
   gap: 8px;
   flex: none;
+  margin-left: auto;
 }
 
 /* round help button — 20px, mirrors the icon-button language */
@@ -1306,6 +1366,18 @@ body.modal-fallback-open::before {
   font-size: 12px;
 }
 
+/* nested section/field lists inside the Flex Query step (the reset strips ul) */
+.help-fields {
+  display: grid;
+  gap: 5px;
+  margin-top: 6px;
+  padding-left: 18px;
+  list-style: disc;
+  font-size: 12.5px;
+}
+
+.help-fields li::marker { color: var(--muted); }
+
 .help-note {
   margin-top: 12px;
   font-size: 12.5px;
@@ -1449,31 +1521,34 @@ body:has(dialog[open]) { overflow: hidden; }
 }
 
 @media (min-width: 1024px) {
-  /* Explicit two-column layout: DOM order (chart → breakdown → summary → drill)
-     is the mobile single-column order; on desktop the two graph cards sit in the
-     wide left column and the summary + drill cards in the narrower right one. */
+  /* Two independent column stacks (see .split__col): the wide left column holds
+     the two graph cards, the narrower right one the summary + drill cards. Each
+     stack keeps its own --gap rhythm, so a tall summary never pads the chart. */
   .split {
     grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
-    grid-template-areas:
-      "chart summary"
-      "breakdown drill";
     align-items: start;
   }
-  #chartCard { grid-area: chart; }
-  #breakdownCard { grid-area: breakdown; }
-  #summaryCard { grid-area: summary; }
-  #drillCard { grid-area: drill; }
   /* the breakdown now owns the wide column, so drop its centred 760px cap */
   #breakdownCard .chart-wrap { max-width: none; }
   .hero__inner { flex-wrap: nowrap; }
 }
 
 @media (max-width: 619px) {
-  .field { flex: 1 1 auto; }
-  .field--load { flex-basis: 100%; }
-  .field--fx { flex-basis: 100%; }
-  .select { width: 100%; }
-  .file-label { max-width: 100%; order: 3; flex-basis: 100%; }
+  /* Slim sticky toolbar: one horizontally scrollable row instead of a tall
+     wrapped stack — every control keeps its natural width. */
+  .toolbar__inner {
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 10px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none; /* the swipe affordance is enough on a phone */
+  }
+  .toolbar__inner::-webkit-scrollbar { display: none; }
+  .field { flex: 0 0 auto; }
+  .select { width: auto; }
+  #includeWrap { flex: 0 0 auto; max-width: none; }
+  .file-label { max-width: 150px; }
   .card { padding: 18px; }
   .dropzone { padding: 30px 18px; }
   #breakdownCard .chart-wrap,

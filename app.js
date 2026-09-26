@@ -14,11 +14,12 @@
  * DOM contract (see index.html): fileInput dropZone yearSelect monthChips kpiNet
  * kpiMonth kpiAvg kpiBest chartSvg chartTip breakdownSvg breakdownTip monthlyBody
  * drillBody drillTitle emptyState errorBox clearBtn postedToggle fileLabel,
- * includeChips tickerBtn toTopTickers filterNote tickerSearchClear fxBadge fxDetail
- * fxInput fxReset csvHelpBtn csvHelpModal csvHelpClose, plus the optional
- * input[name="currencyToggle"] USD/AUD switch, the interest card (interestSvg
- * interestTip kpiIntTotal kpiIntAvgDay kpiIntBest kpiIntShare interestBody),
- * incomeInfo incomeHelp (the breakdown legend .info/.info-tip pair),
+ * includeChips tickerBtn toTopTickers tickersToTop filterNote tickerSearchClear
+ * fxBadge fxDetail fxInput fxReset csvHelpBtn csvHelpModal csvHelpClose
+ * heroCsvInfo heroCsvHelp (the hero subtitle "i" opens the same help dialog), plus
+ * the optional input[name="currencyToggle"] USD/AUD switch, the interest card
+ * (interestSvg interestTip kpiIntTotal kpiIntAvgDay kpiIntBest kpiIntShare
+ * interestBody), incomeInfo incomeHelp (the breakdown legend .info/.info-tip pair),
  * the ticker picker (tickerModal assetToggle tickerSearch tickerCount tickerList
  * tickerApply tickerClear — per-symbol scope selects plus the global asset toggle)
  * and the [data-tab]-driven Overview/Interest tabs. All of those are optional:
@@ -988,7 +989,7 @@ const IBKR = (function () {
    * Keep an absolutely positioned popover (right-anchored by CSS) inside the
    * viewport. Called on the anchor's reveal events, so it only ever nudges the
    * popover's `right` offset: negative moves it right, positive moves it left.
-   * Used by #basisHelp (.info-tip) and #fxDetail (.fx-detail).
+   * Used by #basisHelp (.info-tip), #heroCsvHelp (.info-tip) and #fxDetail (.fx-detail).
    */
   function clampPopover(anchor, popover) {
     if (!anchor || !popover || !popover.getBoundingClientRect) return;
@@ -1004,6 +1005,7 @@ const IBKR = (function () {
   function placeBasisTip() { clampPopover(byId('basisInfo'), byId('basisHelp')); }
   function placeIncomeTip() { clampPopover(byId('incomeInfo'), byId('incomeHelp')); }
   function placeFxDetail() { clampPopover(byId('fxBadge'), byId('fxDetail')); }
+  function placeHeroCsvTip() { clampPopover(byId('heroCsvInfo'), byId('heroCsvHelp')); }
 
   function renderChart(months) {
     const svg = byId('chartSvg');
@@ -1777,10 +1779,12 @@ const IBKR = (function () {
 
   let toTopGlowTimer = null;
   /**
-   * #toTopTickers (summary header) — scroll #tickerBtn into view, focus it and flash
-   * .glow for 2.5s. The pulse itself comes from styles.css; the class is also a plain
-   * ring so reduced-motion users still see the target (the global rule flattens the
-   * animation, JS still removes the class on the same timer).
+   * Both "Tickers ↑" shortcuts — #toTopTickers (Monthly summary header) and
+   * #tickersToTop (drill-down header) — share this handler: scroll #tickerBtn into
+   * view, focus it and flash .glow for 2.5s. The pulse itself comes from
+   * styles.css; the class is also a plain ring so reduced-motion users still see
+   * the target (the global rule flattens the animation, JS still removes the class
+   * on the same timer).
    */
   function onToTopTickers() {
     const btn = byId('tickerBtn');
@@ -2031,8 +2035,9 @@ const IBKR = (function () {
     const openerSelector = '[data-open-tickers], ' + TICKER_IDS.openers.map(id => '#' + id).join(', ');
     if (target.closest(openerSelector)) { openTickerList(); return; }
     // help opener: handled here (like the ticker openers) so the fallback-dialog
-    // dismissal below never sees the opening click as an outside click
-    if (target.closest('#csvHelpBtn')) { openCsvHelp(); return; }
+    // dismissal below never sees the opening click as an outside click. Both the
+    // toolbar "i" and the hero subtitle "i" open the same #csvHelpModal.
+    if (target.closest('#csvHelpBtn, #heroCsvInfo')) { openCsvHelp(); return; }
     // fallback dialogs: a click anywhere outside an open one dismisses it
     if (tickerFallbackOpen() && !target.closest('.modal--fallback')) closeTickerList();
     if (csvHelpFallbackOpen() && !target.closest('.modal--fallback')) closeCsvHelp();
@@ -2148,9 +2153,12 @@ const IBKR = (function () {
     listen(byId('postedToggle'), 'change', renderAll);
     // global asset-class filter radios (#assetToggle) apply live, unlike the pending row controls
     listen(pickById(TICKER_IDS.asset), 'change', onAssetToggleChange);
-    // reveal-time edge clamp for the card/footer/legend popovers
+    // reveal-time edge clamp for the card/footer/legend/hero popovers
     listen(byId('basisInfo'), 'mouseenter', placeBasisTip);
     listen(byId('basisInfo'), 'focusin', placeBasisTip);
+    // hero subtitle "i": same .info/.info-tip pair, clamped on reveal
+    listen(byId('heroCsvInfo'), 'mouseenter', placeHeroCsvTip);
+    listen(byId('heroCsvInfo'), 'focusin', placeHeroCsvTip);
     // legend popover: same clamp-on-reveal pattern as #basisInfo
     listen(byId('incomeInfo'), 'mouseenter', placeIncomeTip);
     listen(byId('incomeInfo'), 'focusin', placeIncomeTip);
@@ -2171,7 +2179,9 @@ const IBKR = (function () {
     listen(byId('interestSvg'), 'focusin', onInterestFocus);
     listen(byId('interestSvg'), 'focusout', hideInterestTip);
     listen(byId('includeChips'), 'click', onIncludeChipsClick);
-    listen(pickById(TICKER_IDS.toTop), 'click', onToTopTickers);
+    // both Tickers ↑ shortcuts (#toTopTickers + #tickersToTop) — bind every id in
+    // the alias list, not just the first present one (pickById would skip the second)
+    for (const toTopId of TICKER_IDS.toTop) listen(byId(toTopId), 'click', onToTopTickers);
     listen(pickById(TICKER_IDS.search), 'input', filterTickerList);
     listen(pickById(TICKER_IDS.searchClear), 'click', onSearchClear);
     listen(pickById(TICKER_IDS.body), 'change', onTickerListChange);

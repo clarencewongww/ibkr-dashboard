@@ -10,22 +10,29 @@ drill-down. Everything runs in the browser: your file never leaves your machine.
 
 ### Preferred: Flex Query
 
-1. Log in to Client Portal → **Performance & Reports** → **Flex Queries**.
-2. Open (or create) an **Activity Flex Query** named `Monthly_Realised_PnL`.
-3. Include these sections:
-   - **Trades** (Executions)
-   - **Cash Transactions**
-   - **Interest Accruals**
-   - **Cash Report**
-   - **Realized/Unrealized P&L** → set the currency to **Base** (not per-currency, not "Base Summary")
-4. Set **Format: CSV**, **Period: Last Month**, then **Run** / **Download** the file.
+1. Log in to Client Portal → **Performance & Reports** → **Flex Queries** → **+** and
+   create an **Activity Flex Query** named `Monthly_Realised_PnL`.
+2. Add these sections and fields (Trades Level of Detail: **Executions**):
+   - **Trades** — 11 fields: `FXRateToBase`, `AssetClass`, `Symbol`, `TradeDate`, `Quantity`,
+     `TradePrice`, `Proceeds`, `IBCommission`, `Notes/Codes`, `CostBasis`, `FifoPnlRealized`.
+   - **Cash Transactions** — 4 fields: `Description`, `Date/Time`, `Amount`, `Type`.
+   - **Interest Accruals** — 7 fields: `CurrencyPrimary`, `FromDate`, `ToDate`,
+     `StartingAccrualBalance`, `InterestAccrued`, `AccrualReversal`, `EndingAccrualBalance`.
+   - **Cash Report** — select all columns (detection only).
+   - **Realized/Unrealized P&L** — currency **Base**, 8 fields: `AssetClass`, `Symbol`,
+     `RealizedShortTermProfit`, `RealizedShortTermLoss`, `RealizedLongTermProfit`,
+     `RealizedLongTermLoss`, `TotalRealizedPnl`, `TotalUnrealizedPnl` (detection only).
+3. **General Configuration:** Format **CSV**, Date Format **yyyy-MM-dd**, and switch
+   **Include Column Headers** and **Section Code** **ON**.
+4. Save the query, set **Period: Year to Date**, then **Run** / **Download** the file.
 5. Save the `.csv` anywhere on your machine — this app only reads it locally.
-   (The same steps are in the dashboard: click the round **i** beside **Load CSV**.)
+   (The same steps are in the dashboard: click either round **i** — beside **Load CSV** or in
+   the header subtitle.)
 
 > **Freshness limits, by design:**
 > - IBKR typically needs up to **5 business days** after month-end before the full previous month is final.
 > - Flex Queries generally cannot include the **current trading day** — the most recent complete day is
->   the previous day. A same-day re-run for "last month" is fine once the month has actually closed.
+>   the previous day. Re-running Year to Date mid-month is fine; expect the current month to lag.
 
 ### Fallback: Activity Statement
 
@@ -92,10 +99,12 @@ $Y`. The legend marks the sides and matches the series: **Net P&L (left)** green
 (right)** teal-dark.
 
 On desktop the four Overview cards form two columns — **chart + Income breakdown** on the left
-(1.55fr) and **Monthly summary + drill-down** on the right (1fr); below 1024px they stack in that
-same order, graphs first. The **month chips** live in the drill-down card header: the summary
-always lists every visible month, while a chip (or a summary row) picks the drill-down month and
-snaps the year filter to that month's year.
+(1.55fr) and **Monthly summary + drill-down** on the right (1fr); each column is an independent
+stack with its own 24px rhythm, so the breakdown always sits 24px under the chart no matter how
+tall the summary gets. Below 1024px they stack in that same order, graphs first. The **month
+chips** live in the drill-down card header: the summary always lists every visible month, while
+a chip (or a summary row) picks the drill-down month and snaps the year filter to that month's
+year.
 
 ### Breakdown
 
@@ -198,8 +207,9 @@ mirror of Exclude, using the same case-insensitive root-symbol matching and pers
   (`#tickerSearchClear`) clears the query.
 - **Chips.** Every included root appears as a pressed chip next to the button, labelled with its
   scope while scoped (`AMD (Options only)`); click a chip to drop that ticker from the allow-list.
-- **Jump back.** The Monthly summary header carries a **Tickers ↑** shortcut (`#toTopTickers`) that
-  scrolls the Tickers button into view, focuses it and flashes a short glow around it.
+- **Jump back.** Both the Monthly summary header and the drill-down header carry a **Tickers ↑**
+  shortcut (`#toTopTickers` / `#tickersToTop`) that scrolls the Tickers button into view, focuses
+  it and flashes a short glow around it.
 - **Ticker-less cash rows** (e.g. broker interest) have no root symbol, so **include never filters
   them** — interest and other cash buckets stay in the totals while an allow-list is active.
 - As with Exclude, hiding is display-only: **overlapping concatenated files still double-count**.
@@ -258,7 +268,7 @@ memory; nothing is rewritten.
 
 | Path | Role |
 | --- | --- |
-| `index.html` | Markup contract: header, year select, month chips (drill-down card header), chart cards, tables, `#postedToggle`, `#tickerBtn` / `#tickerSearchClear` / `#tickerCount` / `#filterNote` / `#toTopTickers`, `#assetToggle` asset radios, `#fxInput` / `#fxReset` / `#fxBadge`, legend income popover `#incomeInfo` / `#incomeHelp`, `#clearBtn`, file input, CSV help `#csvHelpBtn` / `#csvHelpModal`. |
+| `index.html` | Markup contract: header, year select, month chips (drill-down card header), chart cards, tables, `#postedToggle`, `#tickerBtn` / `#tickerSearchClear` / `#tickerCount` / `#filterNote` / `#toTopTickers` / `#tickersToTop`, `#assetToggle` asset radios, `#fxInput` / `#fxReset` / `#fxBadge`, legend income popover `#incomeInfo` / `#incomeHelp`, `#clearBtn`, file input, CSV help `#csvHelpBtn` / `#heroCsvInfo` / `#csvHelpModal`. |
 | `styles.css` | All styling and design tokens (CSS custom properties in `:root`); no external assets. |
 | `app.js` | CSV parser (Flex + Activity Statement), month aggregation, root-symbol include/exclude filter with per-kind scopes, session-only asset filter, USD/AUD rate chain, rendering. Exposes `window.IBKR` for debugging. |
 | `Start-Dashboard.sh` | Kill-then-start launcher: frees port 8000, serves this folder on **127.0.0.1** and opens the page. |
