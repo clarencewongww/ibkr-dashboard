@@ -68,7 +68,7 @@ Multiple files are concatenated; do not load overlapping periods twice or totals
 
 ---
 
-## 3. Breakdown, exclude & currency
+## 3. Breakdown, interest, filters & currency
 
 ### Breakdown
 
@@ -85,6 +85,32 @@ so the stack height matches the month's total whenever the segments share a sign
 negative segments are drawn on opposite sides of the zero line independently. Hover or focus a
 segment for its exact value and share of the month's net.
 
+### Interest tab
+
+The **Overview / Interest** tabs above the content (deep-linkable as `#overview` / `#interest`)
+switch views; the Interest tab renders four KPIs, a bar chart and a per-month table:
+
+| KPI | Maths |
+| --- | --- |
+| **Interest total** | Interest across the visible months. |
+| **Avg / day** | Total ÷ days — calendar days of the visible months on the posted basis, or the summed `IACC` `from`→`to` window on the accrual basis. |
+| **Best month** | Highest monthly interest; the winning month's name sits under the value. |
+| **Share of income** | **Total interest ÷ net P&L** — the label says "income", but the maths divides by the net P&L summed across the visible months, not by the income segment, and reads `0.0%` when net is zero. |
+
+- **Chart.** Bars are green when the month's interest is positive, red when negative; a teal line
+  with dots tracks the cumulative interest across the visible months. Hover or focus a bar or dot
+  for the unified monthly tip (`Net … · Interest …`).
+- **Table.** One row per visible month: month, interest, trade count, and **share of net** — that
+  month's interest ÷ that month's net P&L (same divisor as the KPI, month by month).
+- **Posted vs accrual.** `Posted` (the default) uses posted cash interest. `Accrual` replaces the
+  interest bucket with the **Interest Accruals (`IACC`)** amounts spread day-by-day across each
+  accrual window, so mid-month accruals land on both months. The toggle is global — it changes the
+  interest bucket in every view, not just this tab. A file with no Interest Accruals section falls
+  back to posted interest and the toggle's tooltip explains why; the card's basis note reads
+  `Posted basis` / `Accrual basis`.
+- **Currency.** The USD/AUD switch applies here like everywhere else: KPIs, bars, tooltips and the
+  table are converted at render time from the raw USD amounts (see *Currency* below).
+
 ### Exclude
 
 **Exclude tickers** removes instruments from every aggregate — KPIs, both charts, the month table
@@ -99,6 +125,27 @@ and the drill-down:
 - Ticker-less cash rows (e.g. broker interest) are never excluded.
 - Excluding only hides instruments from the display; **concatenated files still double-count** if
   you load overlapping periods — excluded or not, load each month once.
+
+### Include
+
+**Include tickers** is the allow-list mirror of Exclude, using the same case-insensitive root-symbol
+matching and persisted in `localStorage` under **`ibkr-include-v1`**:
+
+- **Allow-list first.** While the include list is non-empty, only listed roots aggregate into the
+  KPIs, both charts, the month table and the drill-down; an empty list includes everything.
+- **Exclude wins.** When a ticker is caught by both filters, exclude always drops it.
+- **Tickers modal.** The **Tickers (n)** button opens a `<dialog>` listing every traded root
+  (largest |P&L| first, plus any manual pick) with symbol, P&L, and **In / Ex** checkboxes that are
+  mutually exclusive per row — checking one unchecks its twin. **Apply** commits and persists both
+  lists, **Clear** drops both filters, and **Close** / Esc / backdrop discards unapplied changes
+  (state is the source of truth).
+- **Search.** The modal's filter box is a case-insensitive substring match over the rendered
+  symbols; the count reads `shown / total` while a query is active.
+- **Chips.** Every included root appears as a pressed chip next to the button; click a chip to drop
+  that ticker from the allow-list.
+- **Ticker-less cash rows** (e.g. broker interest) have no root symbol, so **include never filters
+  them** — interest and other cash buckets stay in the totals while an allow-list is active.
+- As with Exclude, hiding is display-only: **overlapping concatenated files still double-count**.
 
 ### Currency
 
