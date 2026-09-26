@@ -1,0 +1,19 @@
+node_modules/
+.venv/
+__pycache__/
+dist/
+build/
+.next/
+.env
+.env.*
+!.env.example
+output/
+*.log
+.DS_Store
+# IBKR private data - never commit real data
+data/*
+!data/.gitkeep
+csv/*
+!csv/.gitkeep
+*.csv
+*.CSV
