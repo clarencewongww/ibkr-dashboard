@@ -19,7 +19,8 @@
  * input[name="currencyToggle"] USD/AUD switch, the interest card (interestSvg
  * interestTip kpiIntTotal kpiIntAvgDay kpiIntBest kpiIntShare interestBody),
  * incomeInfo incomeHelp (the breakdown legend .info/.info-tip pair),
- * the ticker picker (tickerModal tickerSearch tickerList tickerApply tickerClear)
+ * the ticker picker (tickerModal assetToggle tickerSearch tickerList tickerApply
+ * tickerClear — per-symbol scope selects plus the global asset toggle)
  * and the [data-tab]-driven Overview/Interest tabs. All of those are optional:
  * every lookup is null-safe so the script survives an older shell.
  *
@@ -32,6 +33,8 @@ const CACHE_KEY = 'ibkr-v1';
 const CACHE_MAX_BYTES = 2 * 1024 * 1024; // bigger raw files are parsed but not cached
 const EXCLUDE_KEY = 'ibkr-exclude-v1';   // persisted root-symbol exclude list
 const INCLUDE_KEY = 'ibkr-include-v1';   // persisted root-symbol include ("only these") list
+const INCLUDE_SCOPE_KEY = 'ibkr-include-scope-v1'; // { SYM: 'options'|'stock' } — include only that leg kind
+const EXCLUDE_SCOPE_KEY = 'ibkr-exclude-scope-v1'; // { SYM: 'options'|'stock' } — exclude only that leg kind
 const FX_KEYS = { cache: 'fx-audusd-v1', override: 'fx_override' };
 const FX_TTL_MS = 12 * 60 * 60 * 1000;   // fresh-cache window for the FX rate
 const FX_TIMEOUT_MS = 5000;              // per-provider request timeout
@@ -352,26 +355,71 @@ const IBKR = (function () {
   }
 
   /**
+   * Trade-level filter shared by aggregateByMonth() and the drill-down loop.
+   *   kind      — coarse asset class: 'options' for options/futures options, else 'stock'
+   *   include / exclude — root symbols (array or Set): exclude wins, include empty = all
+   *   includeScope / excludeScope — { SYM: 'options'|'stock' } object or Map; 'all'/missing
+   *               allows every kind, otherwise the entry only matches that leg kind for SYM
+   *   globalAsset — dashboard-wide 'all' | 'options' | 'stock' gate applied to every trade
+   * Trades whose root has no scope entry are unaffected by scopes.
+   */
+  function tradePasses(trade, opts) {
+    const o = opts || {};
+    const kind = classify(trade) === 'options' ? 'options' : 'stock';
+    const allows = (scope, k) => !scope || scope === 'all' || scope === k;
+    const exclude = toSymbolSet(o.exclude);
+    const include = toSymbolSet(o.include);
+    const excludeScope = toScopeMap(o.excludeScope);
+    const includeScope = toScopeMap(o.includeScope);
+    const globalAsset = normalizeScope(o.globalAsset == null ? o.asset : o.globalAsset);
+    const sym = rootOf(trade.symbol);
+    if (exclude.has(sym) && allows(excludeScope.get(sym), kind)) return false;
+    if (include.size > 0 && !(include.has(sym) && allows(includeScope.get(sym), kind))) return false;
+    return globalAsset === 'all' || kind === globalAsset;
+  }
+
+  /** Arrays/Set of root symbols -> Set (Sets pass straight through). */
+  const toSymbolSet = value => (value instanceof Set ? value : new Set(normalizeSymbols(value)));
+
+  /** { SYM: scope }/Map -> Map, dropping 'all' entries (Maps pass straight through). */
+  function toScopeMap(value) {
+    if (value instanceof Map) return value;
+    const map = new Map();
+    const normalized = normalizeScopeMap(value);
+    for (const sym of Object.keys(normalized)) map.set(sym, normalized[sym]);
+    return map;
+  }
+
+  /** Set/Map normalization of an aggregate/drill options object, computed once per render. */
+  function prepareTradeFilter(options) {
+    const o = options || {};
+    return {
+      include: toSymbolSet(o.include),
+      exclude: toSymbolSet(o.exclude),
+      includeScope: toScopeMap(o.includeScope),
+      excludeScope: toScopeMap(o.excludeScope),
+      globalAsset: normalizeScope(o.globalAsset == null ? o.asset : o.globalAsset)
+    };
+  }
+
+  /**
    * Aggregate trades + cash into { 'yyyy-MM': buckets }. Amounts stay raw USD (display converts).
    * interestMode 'accrual' replaces posted cash interest with the Interest Accruals (IACC) split.
-   * opts.include (array of root symbols, default []) keeps only matching trades when non-empty.
-   * opts.exclude (array of root symbols, default []) hides matching trades and wins over include.
-   * Ticker-less cash rows are never filtered by either list (they have no root symbol to match).
+   * opts.include / opts.exclude (root symbols, default []) keep/hide matching trades; a non-empty
+   * include means "only these". opts.includeScope / opts.excludeScope ({ SYM: 'options'|'stock' })
+   * narrow a symbol's entry to one leg kind, and opts.globalAsset ('all'|'options'|'stock') hides
+   * the other kind for every ticker. Excludes win over includes, per-kind when scoped.
+   * Ticker-less cash rows are never filtered by any of these (they have no root symbol to match).
    */
   function aggregateByMonth(trades, cash, options) {
     const months = {};
     const bucket = key => months[key] || (months[key] = emptyMonth());
     const opts = options || {};
     const useAccrual = opts.interestMode === 'accrual' && opts.accruals && opts.accruals.length > 0;
-    const excludeParts = Array.isArray(opts.exclude) ? opts.exclude : String(opts.exclude == null ? '' : opts.exclude).split(/[,;]+/);
-    const exclude = new Set(excludeParts.map(up).filter(Boolean));
-    const isExcluded = symbol => exclude.size > 0 && exclude.has(rootOf(symbol));
-    const includeParts = Array.isArray(opts.include) ? opts.include : String(opts.include == null ? '' : opts.include).split(/[,;]+/);
-    const include = new Set(includeParts.map(up).filter(Boolean));
-    const isIncluded = symbol => include.size === 0 || include.has(rootOf(symbol));
+    const filter = prepareTradeFilter(opts);
 
     for (const t of trades || []) {
-      if (!isIncluded(t.symbol) || isExcluded(t.symbol)) continue;
+      if (!tradePasses(t, filter)) continue;
       const key = monthKey(t.date);
       if (!key) continue;
       const b = bucket(key);
@@ -385,7 +433,8 @@ const IBKR = (function () {
     }
 
     for (const c of cash || []) {
-      if (isExcluded(c.symbol)) continue; // ticker-less cash descriptions are never filtered
+      const sym = rootOf(c && c.symbol); // cash rows are ticker-less: never filtered by scopes
+      if (sym && filter.exclude.has(sym)) continue;
       const cat = cashCategory(c.type);
       if (!cat || (cat === 'interest' && useAccrual)) continue;
       const key = monthKey(c.date);
@@ -419,6 +468,9 @@ const IBKR = (function () {
     trades: [], cash: [], accruals: [], months: {}, year: 'all', month: 'all', name: '', format: '',
     exclude: [],                 // root symbols skipped during aggregation (persisted)
     include: [],                 // when non-empty, only these roots aggregate (persisted)
+    excludeScope: {},            // { SYM: 'options'|'stock' } — skip only that leg kind (persisted)
+    includeScope: {},            // { SYM: 'options'|'stock' } — keep only that leg kind (persisted)
+    asset: 'all',                // global asset-class view filter all|options|stock (session only)
     currency: 'usd',             // fallback when no currencyToggle input exists
     fx: { rate: 1, fetchedAt: 0, source: 'usd', date: '' }
   };
@@ -502,11 +554,53 @@ const IBKR = (function () {
     return out;
   }
 
+  /** 'all' | 'options' | 'stock' — tolerant of aliases and blank input. */
+  function normalizeScope(value) {
+    const v = up(value);
+    if (v === 'OPTIONS' || v === 'OPTION' || v === 'OPT' || v === 'OPTS') return 'options';
+    if (v === 'STOCK' || v === 'STOCKS' || v === 'EQUITY' || v === 'EQUITIES' || v === 'STK') return 'stock';
+    return 'all';
+  }
+
+  /** Human label for a scope value ("All" / "Options only" / "Stock only"). */
+  function scopeLabel(scope) {
+    const s = normalizeScope(scope);
+    return s === 'options' ? 'Options only' : s === 'stock' ? 'Stock only' : 'All';
+  }
+
+  /** { SYM: scope } (or a Map) -> plain object with uppercased keys, 'all' entries dropped. */
+  function normalizeScopeMap(value) {
+    const out = {};
+    const entries = value instanceof Map ? Array.from(value.entries())
+      : (value && typeof value === 'object' ? Object.keys(value).map(k => [k, value[k]]) : []);
+    for (const entry of entries) {
+      const sym = up(entry[0]), scope = normalizeScope(entry[1]);
+      if (sym && scope !== 'all') out[sym] = scope;
+    }
+    return out;
+  }
+
+  /** Scope map reduced to the symbols that are actually in `list` — orphans never survive a restore. */
+  function pruneScope(scope, list) {
+    const keep = new Set(normalizeSymbols(list));
+    const out = {};
+    for (const sym of Object.keys(scope || {})) if (keep.has(sym)) out[sym] = scope[sym];
+    return out;
+  }
+
+  /** Persist both symbol lists and both scope maps (the whole ticker filter). */
+  function saveFilterState() {
+    lsSet(INCLUDE_KEY, JSON.stringify(state.include));
+    lsSet(EXCLUDE_KEY, JSON.stringify(state.exclude));
+    lsSet(INCLUDE_SCOPE_KEY, JSON.stringify(state.includeScope));
+    lsSet(EXCLUDE_SCOPE_KEY, JSON.stringify(state.excludeScope));
+  }
+
   function getExclude() { return state.exclude.slice(); }
   /** setExclude(['AMD', ...]) / setExclude('AMD,MSFT') — normalizes, persists, re-renders. */
   function setExclude(list) {
     state.exclude = normalizeSymbols(list);
-    lsSet(EXCLUDE_KEY, JSON.stringify(state.exclude));
+    saveFilterState();
     renderAll();
     renderTickerList(); // keep an open picker's checkboxes in sync
     return state.exclude.slice();
@@ -515,10 +609,58 @@ const IBKR = (function () {
   /** setInclude(['IWM', ...]) / setInclude('IWM,AMD') — non-empty means "only these roots". */
   function setInclude(list) {
     state.include = normalizeSymbols(list);
-    lsSet(INCLUDE_KEY, JSON.stringify(state.include));
+    saveFilterState();
     renderAll();
     renderTickerList();
     return state.include.slice();
+  }
+
+  /** getIncludeScope() — copy of { SYM: 'options'|'stock' } for scoped includes. */
+  function getIncludeScope() { return Object.assign({}, state.includeScope); }
+  /** setIncludeScope({ AMD: 'options' }) — persists; entries for symbols outside the include list are pruned on restore. */
+  function setIncludeScope(map) {
+    state.includeScope = normalizeScopeMap(map);
+    saveFilterState();
+    renderAll();
+    renderTickerList();
+    return getIncludeScope();
+  }
+  /** getExcludeScope() — copy of { SYM: 'options'|'stock' } for scoped excludes. */
+  function getExcludeScope() { return Object.assign({}, state.excludeScope); }
+  /** setExcludeScope({ AMD: 'stock' }) — excludes only that leg kind of AMD. */
+  function setExcludeScope(map) {
+    state.excludeScope = normalizeScopeMap(map);
+    saveFilterState();
+    renderAll();
+    renderTickerList();
+    return getExcludeScope();
+  }
+
+  // ------------------------------------------ global asset filter (#assetToggle)
+
+  /** Current global asset filter: 'all' | 'options' | 'stock' (session-only, not persisted). */
+  function getAssetFilter() { return state.asset === 'options' || state.asset === 'stock' ? state.asset : 'all'; }
+
+  /** setAssetFilter('stock') — hides every non-stock leg dashboard-wide; radios follow via syncAssetToggle(). */
+  function setAssetFilter(value, options) {
+    state.asset = normalizeScope(value);
+    syncAssetToggle();
+    if (!(options && options.silent)) renderAll();
+    return state.asset;
+  }
+
+  /** Reflect state.asset on input[name="assetToggle"] without firing events. */
+  function syncAssetToggle() {
+    if (typeof document === 'undefined' || !document.querySelectorAll) return;
+    const radios = document.querySelectorAll('input[name="assetToggle"]');
+    for (let i = 0; i < radios.length; i++) radios[i].checked = normalizeScope(radios[i].value) === getAssetFilter();
+  }
+
+  /** #assetToggle radio change — applied live (the modal's global filter needs no Apply). */
+  function onAssetToggleChange() {
+    if (typeof document === 'undefined' || !document.querySelector) return;
+    const checked = document.querySelector('input[name="assetToggle"]:checked');
+    setAssetFilter(checked ? checked.value : 'all');
   }
 
   // ------------------------------------------------------------------- FX
@@ -962,6 +1104,7 @@ const IBKR = (function () {
   };
   const TICKER_IDS = {
     dialog: ['tickerModal', 'tickerDialog'],
+    asset: ['assetToggle', 'tickerAssetToggle'],
     search: ['tickerSearch', 'tickerFilter'],
     searchClear: ['tickerSearchClear', 'tickerClearSearch'],
     note: ['filterNote', 'tickerFilterNote'],
@@ -1113,10 +1256,15 @@ const IBKR = (function () {
       const g = groups.get(k) || { name, asset, count: 0, pnl: 0 };
       g.count++; g.pnl += amount; groups.set(k, g);
     };
+    // Same predicate as aggregateByMonth so the drill total always matches the month row.
+    const filter = prepareTradeFilter({
+      include: state.include, exclude: state.exclude,
+      includeScope: state.includeScope, excludeScope: state.excludeScope,
+      globalAsset: state.asset
+    });
     for (const t of state.trades) {
       if (monthKey(t.date) !== key) continue;
-      if (state.include.length && state.include.indexOf(rootOf(t.symbol)) < 0) continue;
-      if (state.exclude.length && state.exclude.indexOf(rootOf(t.symbol)) >= 0) continue;
+      if (!tradePasses(t, filter)) continue;
       const where = classify(t);
       add(t.symbol || '—', where === 'options' ? 'Options' : where === 'assign' ? 'Assignment' : 'Stock (other)', Number(t.pnl) || 0);
     }
@@ -1137,18 +1285,29 @@ const IBKR = (function () {
 
   /**
    * Root symbols ranked by |total P&L| (desc, name tiebreak) — feeds the ticker picker
-   * in the include/exclude dialog.
+   * in the include/exclude dialog. Each entry carries the leg split
+   * ({ sym, pnl, stock, options }) so mixed symbols can show a subline.
    */
   function rankedRoots() {
     const totals = new Map();
     for (const t of state.trades) {
       const sym = rootOf(t.symbol);
       if (!sym) continue;
-      totals.set(sym, (totals.get(sym) || 0) + (Number(t.pnl) || 0));
+      const g = totals.get(sym) || { pnl: 0, stock: 0, options: 0 };
+      const pnl = Number(t.pnl) || 0;
+      g.pnl += pnl;
+      if (classify(t) === 'options') g.options += pnl; else g.stock += pnl;
+      totals.set(sym, g);
     }
     return Array.from(totals.keys())
-      .sort((a, b) => Math.abs(totals.get(b)) - Math.abs(totals.get(a)) || (a < b ? -1 : a > b ? 1 : 0))
-      .map(sym => ({ sym, pnl: totals.get(sym) }));
+      .sort((a, b) => Math.abs(totals.get(b).pnl) - Math.abs(totals.get(a).pnl) || (a < b ? -1 : a > b ? 1 : 0))
+      .map(sym => ({ sym, pnl: totals.get(sym).pnl, stock: totals.get(sym).stock, options: totals.get(sym).options }));
+  }
+
+  /** "AMD" or "AMD (Options only)" — a symbol annotated with its non-default scope. */
+  function scopedSymbol(sym, scope) {
+    const s = normalizeScope(scope);
+    return s === 'all' ? sym : sym + ' (' + scopeLabel(s) + ')';
   }
 
   /** #includeChips — every included root as a pressed chip; click removes it from the filter. */
@@ -1156,21 +1315,25 @@ const IBKR = (function () {
     const el = byId('includeChips');
     if (!el) return;
     el.innerHTML = state.include.map(sym => {
-      const title = `Included in every total — click to remove ${sym}`;
+      const scope = normalizeScope(state.includeScope[sym]);
+      const scopeTag = scope === 'all' ? '' : ' (' + scopeLabel(scope) + ')';
+      const title = `Included${scopeTag} in every total — click to remove ${sym}`;
       return `<button type="button" class="chip" data-ticker="${esc(sym)}" aria-pressed="true" title="${esc(title)}">${esc(sym)}</button>`;
     }).join('');
   }
 
   /**
-   * #filterNote — one-line summary of the active ticker filters, hidden while both lists
-   * are empty: "Including only A, B · Excluding C" (either empty clause is omitted).
+   * #filterNote — one-line summary of the active ticker filters, hidden while everything is
+   * default: "Including only A (Options only), B · Excluding C (Stock only) · Stock only"
+   * (the trailing clause is the global #assetToggle filter; empty clauses are omitted).
    */
   function renderFilterNote() {
     const el = pickById(TICKER_IDS.note);
     if (!el) return;
     const parts = [];
-    if (state.include.length) parts.push('Including only ' + state.include.join(', '));
-    if (state.exclude.length) parts.push('Excluding ' + state.exclude.join(', '));
+    if (state.include.length) parts.push('Including only ' + state.include.map(sym => scopedSymbol(sym, state.includeScope[sym])).join(', '));
+    if (state.exclude.length) parts.push('Excluding ' + state.exclude.map(sym => scopedSymbol(sym, state.excludeScope[sym])).join(', '));
+    if (getAssetFilter() !== 'all') parts.push(scopeLabel(getAssetFilter()));
     el.textContent = parts.join(' · ');
     el.hidden = parts.length === 0;
   }
@@ -1235,7 +1398,12 @@ const IBKR = (function () {
 
   function renderAll() {
     const useAccrual = interestMode() === 'accrual' && state.accruals.length > 0;
-    const months = aggregateByMonth(state.trades, state.cash, { interestMode: useAccrual ? 'accrual' : 'posted', accruals: state.accruals, include: state.include, exclude: state.exclude });
+    const months = aggregateByMonth(state.trades, state.cash, {
+      interestMode: useAccrual ? 'accrual' : 'posted', accruals: state.accruals,
+      include: state.include, exclude: state.exclude,
+      includeScope: state.includeScope, excludeScope: state.excludeScope,
+      globalAsset: state.asset
+    });
     state.months = months;
     renderYears(months);
     renderChips();
@@ -1346,6 +1514,17 @@ const IBKR = (function () {
       }
     } catch (err) { /* corrupt include list — keep every ticker */ }
     try {
+      const rawIncludeScope = lsGet(INCLUDE_SCOPE_KEY);
+      if (rawIncludeScope) state.includeScope = normalizeScopeMap(JSON.parse(rawIncludeScope));
+    } catch (err) { /* corrupt scope map — treat every include as unscoped */ }
+    try {
+      const rawExcludeScope = lsGet(EXCLUDE_SCOPE_KEY);
+      if (rawExcludeScope) state.excludeScope = normalizeScopeMap(JSON.parse(rawExcludeScope));
+    } catch (err) { /* corrupt scope map — treat every exclude as unscoped */ }
+    // Orphans: scopes whose symbol has left its list are dropped.
+    state.includeScope = pruneScope(state.includeScope, state.include);
+    state.excludeScope = pruneScope(state.excludeScope, state.exclude);
+    try {
       const raw = localStorage.getItem(CACHE_KEY);
       if (!raw) return;
       const saved = JSON.parse(raw);
@@ -1365,9 +1544,15 @@ const IBKR = (function () {
     state.year = 'all'; state.month = 'all'; state.name = ''; state.format = '';
     state.exclude = [];
     state.include = [];
+    state.excludeScope = {};
+    state.includeScope = {};
+    state.asset = 'all';
+    syncAssetToggle();
     lsRemove(CACHE_KEY);
     lsRemove(EXCLUDE_KEY);
     lsRemove(INCLUDE_KEY);
+    lsRemove(INCLUDE_SCOPE_KEY);
+    lsRemove(EXCLUDE_SCOPE_KEY);
     const input = byId('fileInput');
     if (input) input.value = '';
     setFileLabel('No file selected');
@@ -1380,12 +1565,15 @@ const IBKR = (function () {
 
   let tickerReturnFocus = null;
 
-  /** Root symbols shown in the picker: every traded root, largest |P&L| first, plus manual picks. */
+  /** Root symbols shown in the picker: every traded root, largest |P&L| first, plus manual picks and scoped entries. */
   function tickerSymbols() {
     const ranked = rankedRoots();
     const seen = new Set(ranked.map(r => r.sym));
-    for (const sym of state.include.concat(state.exclude)) {
-      if (!seen.has(sym)) { seen.add(sym); ranked.push({ sym, pnl: 0 }); }
+    const extra = state.include.concat(state.exclude, Object.keys(state.includeScope), Object.keys(state.excludeScope));
+    for (const raw of extra) {
+      const sym = up(raw);
+      if (!sym || seen.has(sym)) continue;
+      seen.add(sym); ranked.push({ sym, pnl: 0, stock: 0, options: 0 });
     }
     return ranked;
   }
@@ -1399,7 +1587,15 @@ const IBKR = (function () {
     btn.title = count ? `${count} tickers in this statement` : 'Load a CSV to pick tickers';
   }
 
-  /** Rows for the include/exclude picker (checkbox per mode, mutual exclusion per ticker). */
+  /** Per-row scope <select> (pending until Apply): All / Options only / Stock only. */
+  function scopeSelectHtml(sym, scope) {
+    const current = normalizeScope(scope);
+    const options = ['all', 'options', 'stock'].map(v =>
+      `<option value="${v}"${current === v ? ' selected' : ''}>${scopeLabel(v)}</option>`).join('');
+    return `<select class="ticker-row__scope" name="assetScope" data-scope aria-label="Asset scope for ${esc(sym)}">${options}</select>`;
+  }
+
+  /** Rows for the include/exclude picker (scope select + checkbox per mode, mutual exclusion per ticker). */
   function renderTickerList() {
     const body = pickById(TICKER_IDS.body);
     if (!body) return;
@@ -1409,12 +1605,16 @@ const IBKR = (function () {
       const included = state.include.indexOf(r.sym) >= 0;
       const excluded = state.exclude.indexOf(r.sym) >= 0;
       const cls = r.pnl > 0 ? 'pos' : r.pnl < 0 ? 'neg' : '';
+      const scope = included ? state.includeScope[r.sym] : excluded ? state.excludeScope[r.sym] : state.includeScope[r.sym] || state.excludeScope[r.sym];
+      const scopeSelect = scopeSelectHtml(r.sym, scope);
+      const split = r.stock && r.options
+        ? `<span class="ticker-row__split">Stock ${fmtCompact(r.stock)} · Options ${fmtCompact(r.options)}</span>` : '';
       const boxes =
-        `<input type="checkbox" data-mode="include" aria-label="Include ${esc(r.sym)}"${included ? ' checked' : ''}>` +
-        `<input type="checkbox" data-mode="exclude" aria-label="Exclude ${esc(r.sym)}"${excluded ? ' checked' : ''}>`;
+        `<input type="checkbox" name="tickerInclude" data-mode="include" aria-label="Include ${esc(r.sym)}"${included ? ' checked' : ''}>` +
+        `<input type="checkbox" name="tickerExclude" data-mode="exclude" aria-label="Exclude ${esc(r.sym)}"${excluded ? ' checked' : ''}>`;
       return asTable
-        ? `<tr data-symbol="${esc(r.sym)}"><td>${esc(r.sym)}</td><td class="num ${cls}">${fmtMoney(r.pnl)}</td><td class="num">${boxes}</td></tr>`
-        : `<label class="ticker-row" data-symbol="${esc(r.sym)}"><span class="ticker-row__symbol">${esc(r.sym)}</span><span class="ticker-row__pnl num ${cls}">${fmtMoney(r.pnl)}</span><span class="ticker-row__modes">${boxes}</span></label>`;
+        ? `<tr data-symbol="${esc(r.sym)}"><td>${esc(r.sym)}${split}</td><td class="num ${cls}">${fmtMoney(r.pnl)}</td><td>${scopeSelect}</td><td class="num">${boxes}</td></tr>`
+        : `<label class="ticker-row" data-symbol="${esc(r.sym)}"><span class="ticker-row__symbol">${esc(r.sym)}</span><span class="ticker-row__pnl num ${cls}">${fmtMoney(r.pnl)}</span>${scopeSelect}<span class="ticker-row__modes">${boxes}</span>${split}</label>`;
     }).join('');
     filterTickerList();
   }
@@ -1451,7 +1651,10 @@ const IBKR = (function () {
   /** Include and exclude are mutually exclusive per ticker — checking one unchecks its twin. */
   function onTickerListChange(e) {
     const box = e.target;
-    if (!box || String(box.type) !== 'checkbox') return;
+    if (!box) return;
+    // Row scope selects stay pending: tickerSelection() reads them when Apply commits.
+    if (String(box.tagName || '').toUpperCase() === 'SELECT') return;
+    if (String(box.type) !== 'checkbox') return;
     const mode = String(box.getAttribute('data-mode') || '');
     if ((mode !== 'include' && mode !== 'exclude') || !box.checked) return;
     const row = tickerRowOf(box);
@@ -1460,10 +1663,10 @@ const IBKR = (function () {
     if (twin) twin.checked = false;
   }
 
-  /** Reads the picker's checkboxes into { include, exclude } symbol lists. */
+  /** Reads the picker's pending checkboxes + scope selects into { include, exclude, includeScope, excludeScope }. */
   function tickerSelection() {
     const body = pickById(TICKER_IDS.body);
-    const out = { include: [], exclude: [] };
+    const out = { include: [], exclude: [], includeScope: {}, excludeScope: {} };
     if (!body || !body.querySelectorAll) return out;
     const rows = body.querySelectorAll('tr[data-symbol], label[data-symbol]');
     for (const row of rows) {
@@ -1471,26 +1674,37 @@ const IBKR = (function () {
       if (!sym) continue;
       const inc = row.querySelector ? row.querySelector('input[data-mode="include"]') : null;
       const exc = row.querySelector ? row.querySelector('input[data-mode="exclude"]') : null;
-      if (inc && inc.checked) out.include.push(sym);
-      else if (exc && exc.checked) out.exclude.push(sym);
+      const sel = row.querySelector ? row.querySelector('select[data-scope]') : null;
+      const scope = normalizeScope(sel ? sel.value : 'all');
+      if (inc && inc.checked) { out.include.push(sym); if (scope !== 'all') out.includeScope[sym] = scope; }
+      else if (exc && exc.checked) { out.exclude.push(sym); if (scope !== 'all') out.excludeScope[sym] = scope; }
     }
     return out;
   }
 
-  /** Apply = commit the pending checkboxes through the persisted setters. */
+  /** Apply = commit the pending checkboxes + scopes, persist once, render once and close. */
   function applyTickerList() {
     const selection = tickerSelection();
-    setInclude(selection.include);
-    setExclude(selection.exclude);
+    state.include = normalizeSymbols(selection.include);
+    state.exclude = normalizeSymbols(selection.exclude);
+    state.includeScope = pruneScope(normalizeScopeMap(selection.includeScope), state.include);
+    state.excludeScope = pruneScope(normalizeScopeMap(selection.excludeScope), state.exclude);
+    saveFilterState();
+    renderAll();          // single batched render for list + scope changes
     closeTickerList();
   }
 
-  /** Clear = drop both filters, empty the search box and stay open for a fresh pick. */
+  /** Clear = drop both filters, their scopes and the global asset choice, then stay open for a fresh pick. */
   function clearTickerList() {
-    setInclude([]);
-    setExclude([]);
+    state.include = [];
+    state.exclude = [];
+    state.includeScope = {};
+    state.excludeScope = {};
+    setAssetFilter('all', { silent: true });
+    saveFilterState();
     const search = pickById(TICKER_IDS.search);
     if (search) search.value = '';
+    renderAll();
     renderTickerList();
     filterTickerList(); // the rebuilt rows ignore the now-empty query; this refreshes the count
   }
@@ -1514,8 +1728,9 @@ const IBKR = (function () {
     }
   }
 
-  /** Open the picker: render fresh rows, show the dialog (modal or fallback), focus search. */
+  /** Open the picker: sync the global asset radios, render fresh rows, show the dialog, focus search. */
   function openTickerList() {
+    syncAssetToggle();
     renderTickerList();
     const dialog = pickById(TICKER_IDS.dialog);
     if (!dialog) return;
@@ -1780,6 +1995,8 @@ const IBKR = (function () {
     // interest rows carry data-month too: the same click selects the month
     listen(pickById(['interestBody', 'interestTableBody']), 'click', onRowClick);
     listen(byId('postedToggle'), 'change', renderAll);
+    // global asset-class filter radios (#assetToggle) apply live, unlike the pending row controls
+    listen(pickById(TICKER_IDS.asset), 'change', onAssetToggleChange);
     // reveal-time edge clamp for the card/footer/legend popovers
     listen(byId('basisInfo'), 'mouseenter', placeBasisTip);
     listen(byId('basisInfo'), 'focusin', placeBasisTip);
@@ -1848,8 +2065,11 @@ const IBKR = (function () {
   return {
     parseCsv, detectFormat, parseFlex, parseActivityStatement, parseCsvText,
     aggregateByMonth, classify, cashCategory, isAssignmentCode, monthKey, monthLabel, rootOf,
+    tradePasses, prepareTradeFilter, normalizeScope, scopeLabel,
     fmtMoney, fmtCompact, disp, currencyMode, init, loadText, clearAll, renderAll, renderBreakdown, incomeOf, incomeTipText, state,
     getExclude, setExclude, getInclude, setInclude,
+    getIncludeScope, setIncludeScope, getExcludeScope, setExcludeScope,
+    getAssetFilter, setAssetFilter,
     monthTipText, renderInterest, rankedRoots,
     renderTickerList, applyTickerList, clearTickerList, openTickerList, closeTickerList, showTab,
     fx: { keys: FX_KEYS, baked: FX_BAKED_RATE, fetchFx, resolveFxOnLoad }

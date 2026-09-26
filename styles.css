@@ -1267,8 +1267,8 @@ body:has(dialog[open]) { overflow: hidden; }
 /* column key for the rows app.js renders; retired while the list is empty */
 .ticker-head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 4px 10px;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 4px 8px;
   padding: 0 10px;
   margin-top: 14px;
   font-size: 10.5px;
@@ -1280,12 +1280,12 @@ body:has(dialog[open]) { overflow: hidden; }
 
 .modal:has(#tickerList:empty) .ticker-head { display: none; }
 
-/* app.js rows: label.ticker-row = symbol · P&L · include/exclude checkboxes */
+/* app.js rows: label.ticker-row = symbol · P&L · scope select · include/exclude boxes */
 .ticker-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: center;
-  gap: 4px 10px;
+  gap: 4px 8px;
   padding: 7px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -1307,6 +1307,48 @@ body:has(dialog[open]) { overflow: hidden; }
 }
 
 .ticker-row__pnl { font-size: 12.5px; }
+
+/* per-symbol scope select — compact so symbol · P&L · scope · In/Ex fit 375px */
+.ticker-row__scope {
+  max-width: 104px;
+  min-width: 0;
+  padding: 2px 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.ticker-row__scope:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 1px;
+}
+
+/* mixed stock+options roots: second line under the row, e.g. "Stock $1.2k · Options $3.4k" */
+.ticker-row__split {
+  grid-column: 1 / -1;
+  margin-top: -3px;
+  font-size: 10.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* modal-wide asset filter (#assetToggle radios) — compact variant of .segmented */
+.segmented--asset {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.segmented--asset .segmented__pill {
+  min-height: 26px;
+  padding: 3px 10px;
+  font-size: 12px;
+}
 
 .ticker-row__modes {
   display: inline-flex;

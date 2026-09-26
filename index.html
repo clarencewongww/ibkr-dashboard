@@ -46,16 +46,20 @@
              #interestTip — same hidden/[hidden] contract as #chartTip
              #interestBody — tbody of #interestTable; app.js renders its rows
   Tickers    #tickerBtn — opens #tickerModal; its label text is app.js-owned ("Tickers (n)")
-             #tickerModal <dialog> · #tickerSearch filter input · #tickerSearchClear button
+             #tickerModal <dialog> · #assetToggle fieldset (radios name="assetToggle",
+             value="all"|"options"|"stock") hides the other leg kind dashboard-wide and
+             applies live · #tickerSearch filter input · #tickerSearchClear button
              empties that filter · #tickerList is a DIV and receives label.ticker-row rows
-             (symbol · P&L · include/exclude checkboxes) · #tickerApply / #tickerClear /
-             #tickerClose buttons. app.js calls showModal()/close(); Esc/backdrop are
+             (symbol · P&L · select[data-scope] All/Options only/Stock only ·
+             include/exclude checkboxes) · #tickerApply / #tickerClear / #tickerClose
+             buttons. Row checkboxes + scopes stay pending until Apply; Clear resets them
+             and #assetToggle. app.js calls showModal()/close(); Esc/backdrop are
              native (an open-attribute fallback takes over when showModal is unavailable).
              .ticker-list/.ticker-row styles live in styles.css.
              #includeChips — chip contract: button.chip[data-ticker] with
-             aria-pressed="true"; click removes the include. #includeWrap groups the
-             Tickers button with those chips and #filterNote (aria-live="polite" summary
-             of the active ticker filters)
+             aria-pressed="true" (its title names the scope); click removes the include.
+             #includeWrap groups the Tickers button with those chips and #filterNote
+             (aria-live="polite" summary of the active ticker filters, scopes included)
   Basis      #postedToggle  fieldset; radios name="postedToggle" value="posted"|"accrual".
              app.js listens for "change" on the fieldset (radios bubble) and reads
              input[name="postedToggle"]:checked → value "accrual" = accrual interest.
@@ -549,22 +553,40 @@
 </footer>
 
 <!-- Ticker picker (shell): app.js fills #tickerList, filters it with #tickerSearch
-     and writes the picked set into #includeChips. Native <dialog> — app.js calls
-     showModal()/close(); Esc, focus trapping and backdrop clicks are the browser's job,
-     with an app.js open-attribute fallback for engines without showModal. -->
+     and writes the picked set into #includeChips. The #assetToggle radios filter the
+     whole dashboard live (all/options/stock); per-row scope selects are pending until
+     Apply. Native <dialog> — app.js calls showModal()/close(); Esc, focus trapping and
+     backdrop clicks are the browser's job, with an app.js open-attribute fallback for
+     engines without showModal. -->
 <dialog id="tickerModal" class="modal" aria-labelledby="tickerModalTitle">
   <h2 class="modal__title" id="tickerModalTitle">Tickers</h2>
+  <fieldset id="assetToggle" class="segmented segmented--asset" aria-label="Asset class filter">
+    <legend class="visually-hidden">Asset class</legend>
+    <label class="segmented__opt">
+      <input type="radio" name="assetToggle" id="assetToggleAll" value="all" checked>
+      <span class="segmented__pill">All</span>
+    </label>
+    <label class="segmented__opt">
+      <input type="radio" name="assetToggle" id="assetToggleOptions" value="options">
+      <span class="segmented__pill">Options only</span>
+    </label>
+    <label class="segmented__opt">
+      <input type="radio" name="assetToggle" id="assetToggleStock" value="stock">
+      <span class="segmented__pill">Stock only</span>
+    </label>
+  </fieldset>
   <div class="ticker-search">
     <label class="visually-hidden" for="tickerSearch">Filter tickers</label>
     <input id="tickerSearch" class="input" type="text" placeholder="Filter tickers"
            autocomplete="off" spellcheck="false">
     <button id="tickerSearchClear" class="search-clear" type="button" aria-label="Clear search">×</button>
   </div>
-  <!-- column key for the rows app.js renders (label.ticker-row: symbol · P&L · In/Ex boxes);
-       hidden while the list is empty -->
+  <!-- column key for the rows app.js renders (label.ticker-row: symbol · P&L ·
+       scope select · In/Ex boxes); hidden while the list is empty -->
   <div class="ticker-head" aria-hidden="true">
     <span>Symbol</span>
     <span>P&amp;L</span>
+    <span>Scope</span>
     <span>In / Ex</span>
   </div>
   <div id="tickerList" class="ticker-list" role="group" aria-label="Tickers"></div>
