@@ -36,12 +36,23 @@ understands this Activity-Statement layout (it keys off the `Trades` / cash sect
 
 ## 2. Run it
 
-### Option A — double-click (no server)
+### Option A — one-click launcher (kills the old server first)
+
+Double-click **`Start-Dashboard.app`**, or run `./Start-Dashboard.sh` from Terminal. The launcher
+kills whatever is listening on port 8000, starts `python3 -m http.server` bound to **127.0.0.1**,
+waits for `http://127.0.0.1:8000/index.html` to answer, then opens it. The server is detached, so
+nothing has to stay open after the page appears.
+
+- **First launch only (Gatekeeper):** right-click `Start-Dashboard.app` → **Open** → **Open**. The
+  bundle is signed locally (ad-hoc), so plain double-click works from then on.
+- **Stop it manually:** `lsof -ti:8000 -sTCP:LISTEN | xargs kill`.
+
+### Option B — double-click (no server)
 
 Open `index.html` directly from Finder (works over `file://`) and pick your CSV with **Choose file**.
 All parsing is done with the browser's `FileReader`; no server, no upload.
 
-### Option B — local HTTP server (recommended for a stable origin)
+### Option C — local HTTP server (recommended for a stable origin)
 
 ```bash
 python3 -m http.server 8000 --bind 127.0.0.1
@@ -229,6 +240,8 @@ memory; nothing is rewritten.
 | `index.html` | Markup contract: header, month/year chips, chart cards, table, `#postedToggle`, `#tickerBtn` / `#tickerSearchClear` / `#tickerCount` / `#filterNote` / `#toTopTickers`, `#assetToggle` asset radios, `#fxInput` / `#fxReset` / `#fxBadge`, legend income popover `#incomeInfo` / `#incomeHelp`, `#clearBtn`, file input. |
 | `styles.css` | All styling and design tokens (CSS custom properties in `:root`); no external assets. |
 | `app.js` | CSV parser (Flex + Activity Statement), month aggregation, root-symbol include/exclude filter with per-kind scopes, session-only asset filter, USD/AUD rate chain, rendering. Exposes `window.IBKR` for debugging. |
+| `Start-Dashboard.sh` | Kill-then-start launcher: frees port 8000, serves this folder on **127.0.0.1** and opens the page. |
+| `Start-Dashboard.app` | Double-click wrapper around `Start-Dashboard.sh`; no Terminal window (right-click **Open** on first launch only). |
 | `data/` | Your local IBKR exports and scratch space (gitignored). |
 | `.gitignore` | Keeps `*.csv`, `data/*` and env/log noise out of git. |
 | `README.md` | This file. |
