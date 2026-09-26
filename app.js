@@ -1014,7 +1014,12 @@ const IBKR = (function () {
     if (!keys.length) {
       hideTip();
       svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-      svg.innerHTML = '<g id="chartPlaceholder"><text class="chart__hint" x="360" y="150" text-anchor="middle">Load a CSV to plot monthly totals</text></g>';
+      svg.innerHTML = '<g id="chartPlaceholder">' +
+        '<line class="grid" x1="0" y1="40" x2="720" y2="40"></line>' +
+        '<line class="grid" x1="0" y1="110" x2="720" y2="110"></line>' +
+        '<line class="grid" x1="0" y1="180" x2="720" y2="180"></line>' +
+        '<line class="axis" x1="0" y1="250" x2="720" y2="250"></line>' +
+        '<text class="chart__hint" x="360" y="150" text-anchor="middle">Load a CSV to plot monthly totals</text></g>';
       return;
     }
     const totals = keys.map(k => months[k].total);
@@ -1203,7 +1208,7 @@ const IBKR = (function () {
     setPickText(INTEREST_KPI.avgDay, rows.length && days > 0 ? fmtMoney(total / days) + ' /day' : '—');
     setPickText(INTEREST_KPI.best, rows.length && best ? fmtMoney(best.amount) : '—');
     setPickText(INTEREST_KPI.share, !rows.length ? '—' : net ? (total / net * 100).toFixed(1) + '%' : '0.0%');
-    const bestSub = pickById(['interestBestSub', 'kpiInterestBestSub']);
+    const bestSub = pickById(['kpiIntBestSub', 'interestBestSub', 'kpiInterestBestSub']);
     if (bestSub) bestSub.textContent = rows.length && best ? monthLabel(best.key) : '';
     const basis = pickById(['interestBasis', 'interestBasisNote']);
     if (basis) basis.textContent = accrual ? 'Accrual basis' : 'Posted basis';

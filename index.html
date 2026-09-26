@@ -46,6 +46,9 @@
              keys off those, then flips aria-selected/tabindex and the hidden
              attribute). #tabBtnOverview starts selected, #tabInterest starts hidden.
   Interest   KPIs #kpiIntTotal #kpiIntAvgDay #kpiIntBest #kpiIntShare ("—" while empty)
+             #kpiIntBestSub — month name under the Best-month value (app.js fills it)
+             #interestBasis — "Posted basis"/"Accrual basis" chip in the card head;
+                            app.js rewrites its text with the #postedToggle basis
              #interestSvg — 720x300 viewBox, same contract as #chartSvg (app.js
                             re-declares the viewBox and draws .chart primitives)
              #interestTip — same hidden/[hidden] contract as #chartTip
@@ -377,10 +380,10 @@
                preserveAspectRatio="xMidYMid meet" role="img"
                aria-label="Monthly realised profit and loss with running total">
             <g id="chartPlaceholder">
-              <line class="chart__grid" x1="0" y1="40" x2="720" y2="40"></line>
-              <line class="chart__grid" x1="0" y1="110" x2="720" y2="110"></line>
-              <line class="chart__grid" x1="0" y1="180" x2="720" y2="180"></line>
-              <line class="chart__axis" x1="0" y1="250" x2="720" y2="250"></line>
+              <line class="grid" x1="0" y1="40" x2="720" y2="40"></line>
+              <line class="grid" x1="0" y1="110" x2="720" y2="110"></line>
+              <line class="grid" x1="0" y1="180" x2="720" y2="180"></line>
+              <line class="axis" x1="0" y1="250" x2="720" y2="250"></line>
               <text class="chart__hint" x="360" y="150" text-anchor="middle">Load a CSV to plot monthly totals</text>
             </g>
           </svg>
@@ -506,6 +509,10 @@
           <h2 class="card__title" id="interestTitle">Interest income</h2>
           <p class="card__sub">Posted interest by month, or the accrual estimate when the file has an Interest Accruals section.</p>
         </div>
+        <div class="card__head-actions">
+          <!-- basis chip: app.js flips this between Posted basis / Accrual basis -->
+          <span id="interestBasis" class="basis-note">Posted basis</span>
+        </div>
       </div>
 
       <div id="interestKpis" class="kpis kpis--mini">
@@ -520,6 +527,7 @@
         <article class="card kpi kpi--mini">
           <p class="kpi__label">Best month</p>
           <p class="kpi__value num" id="kpiIntBest">—</p>
+          <p class="kpi__meta"><span class="kpi__sub" id="kpiIntBestSub"></span></p>
         </article>
         <article class="card kpi kpi--mini">
           <p class="kpi__label">Share of income</p>
