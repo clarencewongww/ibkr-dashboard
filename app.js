@@ -14,8 +14,12 @@
  * DOM contract (see index.html): fileInput dropZone yearSelect monthChips kpiNet
  * kpiMonth kpiBest kpiAvg chartSvg chartTip breakdownSvg breakdownTip monthlyBody
  * drillBody drillTitle emptyState errorBox clearBtn postedToggle fileLabel,
- * excludeInput excludeChips fxBadge fxInput fxReset, plus the optional
- * input[name="currencyToggle"] USD/AUD switch.
+ * excludeInput excludeChips fxBadge fxDetail fxInput fxReset, plus the optional
+ * input[name="currencyToggle"] USD/AUD switch, the interest card (interestSvg
+ * interestTip kpiIntTotal kpiIntAvgDay kpiIntBest kpiIntShare interestBody),
+ * the ticker picker (tickerModal tickerSearch tickerList tickerApply tickerClear)
+ * and the [data-tab]-driven Overview/Interest tabs. All of those are optional:
+ * every lookup is null-safe so the script survives an older shell.
  *
  * Browser: window.IBKR = { state, aggregateByMonth, renderAll, ... }.
  * Node (tests): module.exports.
@@ -25,6 +29,7 @@ const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Se
 const CACHE_KEY = 'ibkr-v1';
 const CACHE_MAX_BYTES = 2 * 1024 * 1024; // bigger raw files are parsed but not cached
 const EXCLUDE_KEY = 'ibkr-exclude-v1';   // persisted root-symbol exclude list
+const INCLUDE_KEY = 'ibkr-include-v1';   // persisted root-symbol include ("only these") list
 const FX_KEYS = { cache: 'fx-audusd-v1', override: 'fx_override' };
 const FX_TTL_MS = 12 * 60 * 60 * 1000;   // fresh-cache window for the FX rate
 const FX_TIMEOUT_MS = 5000;              // per-provider request timeout
@@ -347,8 +352,9 @@ const IBKR = (function () {
   /**
    * Aggregate trades + cash into { 'yyyy-MM': buckets }. Amounts stay raw USD (display converts).
    * interestMode 'accrual' replaces posted cash interest with the Interest Accruals (IACC) split.
-   * opts.exclude (array of root symbols, default []) hides matching trades; cash rows are only
-   * filtered when they carry an explicit symbol.
+   * opts.include (array of root symbols, default []) keeps only matching trades when non-empty.
+   * opts.exclude (array of root symbols, default []) hides matching trades and wins over include.
+   * Ticker-less cash rows are never filtered by either list (they have no root symbol to match).
    */
   function aggregateByMonth(trades, cash, options) {
     const months = {};
@@ -358,9 +364,12 @@ const IBKR = (function () {
     const excludeParts = Array.isArray(opts.exclude) ? opts.exclude : String(opts.exclude == null ? '' : opts.exclude).split(/[,;]+/);
     const exclude = new Set(excludeParts.map(up).filter(Boolean));
     const isExcluded = symbol => exclude.size > 0 && exclude.has(rootOf(symbol));
+    const includeParts = Array.isArray(opts.include) ? opts.include : String(opts.include == null ? '' : opts.include).split(/[,;]+/);
+    const include = new Set(includeParts.map(up).filter(Boolean));
+    const isIncluded = symbol => include.size === 0 || include.has(rootOf(symbol));
 
     for (const t of trades || []) {
-      if (isExcluded(t.symbol)) continue;
+      if (!isIncluded(t.symbol) || isExcluded(t.symbol)) continue;
       const key = monthKey(t.date);
       if (!key) continue;
       const b = bucket(key);
@@ -407,6 +416,7 @@ const IBKR = (function () {
   const state = {
     trades: [], cash: [], accruals: [], months: {}, year: 'all', month: 'all', name: '', format: '',
     exclude: [],                 // root symbols skipped during aggregation (persisted)
+    include: [],                 // when non-empty, only these roots aggregate (persisted)
     currency: 'usd',             // fallback when no currencyToggle input exists
     fx: { rate: 1, fetchedAt: 0, source: 'usd', date: '' }
   };
@@ -414,8 +424,14 @@ const IBKR = (function () {
   let restoreTried = false;
 
   const byId = id => (typeof document === 'undefined' ? null : document.getElementById(id));
+  /** First present element among the candidate ids a shell may use for the same slot. */
+  function pickById(ids) {
+    for (const id of ids) { const el = byId(id); if (el) return el; }
+    return null;
+  }
   const hasData = () => state.trades.length > 0 || state.cash.length > 0;
   function setText(id, text) { const el = byId(id); if (el) el.textContent = text; }
+  function setPickText(ids, text) { const el = pickById(ids); if (el) el.textContent = text; }
   function setDelta(id, text, dir) {
     const el = byId(id);
     if (!el) return;
@@ -470,9 +486,8 @@ const IBKR = (function () {
 
   // ------------------------------------------------------- exclude/currency
 
-  function getExclude() { return state.exclude.slice(); }
-  /** setExclude(['AMD', ...]) / setExclude('AMD,MSFT') — normalizes, persists, re-renders. */
-  function setExclude(list) {
+  /** Uppercased, trimmed, de-duplicated root symbols (input order preserved). */
+  function normalizeSymbols(list) {
     const parts = Array.isArray(list) ? list : String(list == null ? '' : list).split(/[,;]+/);
     const seen = new Set(), out = [];
     for (const part of parts) {
@@ -480,10 +495,26 @@ const IBKR = (function () {
       if (!sym || seen.has(sym)) continue;
       seen.add(sym); out.push(sym);
     }
-    state.exclude = out;
-    lsSet(EXCLUDE_KEY, JSON.stringify(out));
-    renderAll();
     return out;
+  }
+
+  function getExclude() { return state.exclude.slice(); }
+  /** setExclude(['AMD', ...]) / setExclude('AMD,MSFT') — normalizes, persists, re-renders. */
+  function setExclude(list) {
+    state.exclude = normalizeSymbols(list);
+    lsSet(EXCLUDE_KEY, JSON.stringify(state.exclude));
+    renderAll();
+    renderTickerList(); // keep an open picker's checkboxes in sync
+    return state.exclude.slice();
+  }
+  function getInclude() { return state.include.slice(); }
+  /** setInclude(['IWM', ...]) / setInclude('IWM,AMD') — non-empty means "only these roots". */
+  function setInclude(list) {
+    state.include = normalizeSymbols(list);
+    lsSet(INCLUDE_KEY, JSON.stringify(state.include));
+    renderAll();
+    renderTickerList();
+    return state.include.slice();
   }
 
   // ------------------------------------------------------------------- FX
@@ -690,6 +721,27 @@ const IBKR = (function () {
       (Number(b.withholding) || 0) + (Number(b.fees) || 0);
   }
 
+  /**
+   * Unified month tip shared by #chartSvg, #breakdownSvg and #interestSvg:
+   *   "May 2026 · Net $14,069.38 · Options $… (37%) · Stock $… (30%) · Interest $… (7%) · Div $… (2%)"
+   * Withhold/Fees appear only when non-zero; each percentage is the line's share of the month's
+   * net total and is omitted when that total is 0. `running` appends the chart cumulative.
+   */
+  function monthTipText(k, b, running) {
+    const m = b || {};
+    const total = Number(m.total) || 0;
+    const pct = v => total ? ` (${Math.round((Number(v) || 0) / total * 100)}%)` : '';
+    let text = `${monthLabel(k)} · Net ${fmtMoney(total)}` +
+      ` · Options ${fmtMoney(m.options)}${pct(m.options)}` +
+      ` · Stock ${fmtMoney(m.assign)}${pct(m.assign)}` +
+      ` · Interest ${fmtMoney(m.interest)}${pct(m.interest)}` +
+      ` · Div ${fmtMoney(m.dividends)}${pct(m.dividends)}`;
+    if (Number(m.withholding)) text += ` · Withhold ${fmtMoney(m.withholding)}${pct(m.withholding)}`;
+    if (Number(m.fees)) text += ` · Fees ${fmtMoney(m.fees)}${pct(m.fees)}`;
+    if (running != null) text += ` · Running ${fmtMoney(running)}`;
+    return text;
+  }
+
   // chart hooks: .bar / .bar--neg / .line / .dot / .tick / .label are styled by styles.css
   /**
    * Position the hovered chart's tip (`.chart-tip`) at the element's top-centre. The tip is
@@ -730,6 +782,7 @@ const IBKR = (function () {
   function hideTipFor(tip) { if (tip) tip.hidden = true; } // stays laid out, styles.css fades it out
   function hideTip() { hideTipFor(byId('chartTip')); }
   function hideBreakdownTip() { hideTipFor(byId('breakdownTip')); }
+  function hideInterestTip() { hideTipFor(byId('interestTip')); }
   function tipTarget(e) {
     const t = e.target;
     return t && t.getAttribute && t.getAttribute('data-tip') ? t : null;
@@ -771,8 +824,7 @@ const IBKR = (function () {
       const total = totals[i];
       const top = total >= 0 ? y(total) : zero;
       const height = Math.max(1, Math.abs(y(total) - zero));
-      const label = monthLabel(k);
-      const tip = `${label} · Net ${fmtMoney(total)} · Running ${fmtMoney(cumulative[i])}`;
+      const tip = monthTipText(k, months[k], cumulative[i]);
       if (state.month !== 'all' && k === `${state.year}-${state.month}`) {
         out += `<rect x="${(pl + band * i + 2).toFixed(1)}" y="${pt}" width="${(band - 4).toFixed(1)}" height="${ih}" rx="4" fill="currentColor" fill-opacity="0.05" />`;
       }
@@ -838,7 +890,6 @@ const IBKR = (function () {
       out += `<text class="label" x="${pl - 8}" y="${(+yy + 3).toFixed(1)}" text-anchor="end">${fmtCompact(v)}</text>`;
     }
     stacks.forEach((st, i) => {
-      const label = monthLabel(st.key);
       if (state.month !== 'all' && st.key === `${state.year}-${state.month}`) {
         out += `<rect x="${(pl + band * i + 2).toFixed(1)}" y="${pt}" width="${(band - 4).toFixed(1)}" height="${ih}" rx="4" fill="currentColor" fill-opacity="0.05" />`;
       }
@@ -849,12 +900,136 @@ const IBKR = (function () {
         if (s.value > 0) pos += s.value; else neg += s.value;
         const top = Math.min(y(from), y(from + s.value));
         const h = Math.max(1, Math.abs(y(from + s.value) - y(from)));
-        const pct = st.total ? Math.round(s.value / st.total * 100) : null;
-        const tip = `${label} · ${s.name} ${fmtMoney(s.value)}` + (pct == null ? '' : ` (${pct}% of net)`);
+        const tip = `${s.name} · ${monthTipText(st.key, months[st.key])}`;
         out += `<rect class="bar ${s.cls}" x="${(cx(i) - barW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${barW}" height="${h.toFixed(1)}" rx="2" fill="${s.fill}" tabindex="0" data-tip="${esc(tip)}"><title>${esc(tip)}</title></rect>`;
       }
       out += `<text class="label" x="${cx(i).toFixed(1)}" y="${H - 16}" text-anchor="middle">${MONTH_NAMES[+st.key.slice(5, 7) - 1] || st.key}${multiYear ? " '" + st.key.slice(2, 4) : ''}</text>`;
     });
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.innerHTML = out;
+  }
+
+  // The interest card and ticker modal live in the shell; the second id in each list is a
+  // tolerated alias, so either naming convention binds. Missing ids are simply skipped.
+  const INTEREST_KPI = {
+    total: ['kpiIntTotal', 'interestTotal', 'kpiInterestTotal'],
+    avgDay: ['kpiIntAvgDay', 'interestAvgDay', 'kpiInterestAvgDay'],
+    best: ['kpiIntBest', 'interestBest', 'kpiInterestBest'],
+    share: ['kpiIntShare', 'interestShare', 'kpiInterestShare']
+  };
+  const TICKER_IDS = {
+    dialog: ['tickerModal', 'tickerDialog'],
+    search: ['tickerSearch', 'tickerFilter'],
+    body: ['tickerList', 'tickerListBody', 'tickerRows', 'tickerBody'],
+    apply: ['tickerApply', 'tickerApplyBtn'],
+    clear: ['tickerClear', 'tickerClearBtn'],
+    close: ['tickerClose', 'tickerCloseBtn'],
+    openers: ['tickerBtn', 'tickerOpen', 'openTickers', 'openTickerList', 'manageTickers', 'tickerListBtn']
+  };
+
+  /** Days in a 'yyyy-MM' month (UTC maths keeps it DST-proof). */
+  function daysInMonth(key) {
+    const y = +String(key).slice(0, 4), m = +String(key).slice(5, 7);
+    return m >= 1 && m <= 12 ? new Date(Date.UTC(y, m, 0)).getUTCDate() : 0;
+  }
+  /** Exact accrual window: sum of the IACC from→to periods, inclusive days. */
+  function accrualDays() {
+    let days = 0;
+    for (const a of state.accruals || []) {
+      const from = ymd(a.from), to = ymd(a.to);
+      if (!from) continue;
+      days += (!to || to < from) ? 1 : Math.round((to - from) / 86400000) + 1;
+    }
+    return days;
+  }
+
+  /**
+   * Interest analysis card — KPIs (total, avg/day, best month, share of net), a bar chart with
+   * the cumulative teal running line (#interestSvg/#interestTip, same 720x300 geometry as
+   * #chartSvg) and a per-month table (Month | Interest | Trades | Share of net). Every lookup
+   * is null-safe: shells without the card skip it entirely.
+   */
+  function renderInterest(months) {
+    const svg = byId('interestSvg');
+    const keys = visibleKeys();
+    const accrual = interestMode() === 'accrual' && state.accruals.length > 0;
+    const rows = keys.map(k => {
+      const b = months[k] || {};
+      return { key: k, b, amount: Number(b.interest) || 0, total: Number(b.total) || 0, count: Number(b.count) || 0 };
+    });
+    const total = rows.reduce((a, r) => a + r.amount, 0);
+    const net = rows.reduce((a, r) => a + r.total, 0);
+    const days = accrual ? accrualDays() : rows.reduce((a, r) => a + daysInMonth(r.key), 0);
+    let best = null;
+    for (const r of rows) if (!best || r.amount > best.amount) best = r;
+
+    setPickText(INTEREST_KPI.total, rows.length ? fmtMoney(total) : '—');
+    setPickText(INTEREST_KPI.avgDay, rows.length && days > 0 ? fmtMoney(total / days) + ' /day' : '—');
+    setPickText(INTEREST_KPI.best, rows.length && best ? fmtMoney(best.amount) : '—');
+    setPickText(INTEREST_KPI.share, !rows.length ? '—' : net ? (total / net * 100).toFixed(1) + '%' : '0.0%');
+    const bestSub = pickById(['interestBestSub', 'kpiInterestBestSub']);
+    if (bestSub) bestSub.textContent = rows.length && best ? monthLabel(best.key) : '';
+    const basis = pickById(['interestBasis', 'interestBasisNote']);
+    if (basis) basis.textContent = accrual ? 'Accrual basis' : 'Posted basis';
+
+    const body = pickById(['interestBody', 'interestTableBody']);
+    if (body) {
+      body.innerHTML = keys.length ? rows.map(r => {
+        const share = r.total ? Math.round(r.amount / r.total * 100) + '%' : '—';
+        const cls = r.amount > 0 ? 'pos' : r.amount < 0 ? 'neg' : '';
+        return `<tr data-month="${r.key}"><td>${monthLabel(r.key)}</td>` +
+          `<td class="num ${cls}">${fmtMoney(r.amount)}</td>` +
+          `<td class="num">${r.count}</td>` +
+          `<td class="num">${share}</td></tr>`;
+      }).join('') : '';
+    }
+
+    if (!svg) return;
+    const W = 720, H = 300, pl = 72, pr = 20, pt = 28, pb = 46;
+    const iw = W - pl - pr, ih = H - pt - pb;
+    if (!keys.length) {
+      hideTipFor(byId('interestTip'));
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      svg.innerHTML = ''; // the shell's :has(#interestSvg:empty) hint covers the empty state
+      return;
+    }
+    const values = rows.map(r => r.amount);
+    const cumulative = [];
+    let run = 0;
+    for (const v of values) { run += v; cumulative.push(run); }
+    let hi = Math.max(0, ...values, ...cumulative);
+    let lo = Math.min(0, ...values, ...cumulative);
+    const pad = (hi - lo) * 0.1 || 1;
+    hi += pad; lo -= pad;
+    const y = v => pt + ih * (hi - v) / (hi - lo);
+    const band = iw / keys.length;
+    const cx = i => pl + band * (i + 0.5);
+    const barW = Math.max(6, Math.min(12, band - 6));
+    const zero = y(0);
+    const multiYear = state.year === 'all' && new Set(keys.map(k => k.slice(0, 4))).size > 1;
+    let out = '';
+    for (const v of [hi, 0, lo]) {
+      const yy = y(v).toFixed(1);
+      out += `<line class="grid" x1="${pl}" y1="${yy}" x2="${W - pr}" y2="${yy}" stroke="currentColor" stroke-opacity="0.5" />`;
+      out += `<text class="label" x="${pl - 8}" y="${(+yy + 3).toFixed(1)}" text-anchor="end">${fmtCompact(v)}</text>`;
+    }
+    keys.forEach((k, i) => {
+      const amount = values[i];
+      const top = amount >= 0 ? y(amount) : zero;
+      const height = Math.max(1, Math.abs(y(amount) - zero));
+      const tip = monthTipText(k, months[k]);
+      if (state.month !== 'all' && k === `${state.year}-${state.month}`) {
+        out += `<rect x="${(pl + band * i + 2).toFixed(1)}" y="${pt}" width="${(band - 4).toFixed(1)}" height="${ih}" rx="4" fill="currentColor" fill-opacity="0.05" />`;
+      }
+      // green = interest received that month, red = interest paid/fees dragging the month negative
+      out += `<rect class="bar${amount < 0 ? ' bar--neg' : ''}" x="${(cx(i) - barW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${barW}" height="${height.toFixed(1)}" rx="2" fill="${amount >= 0 ? '#48BB78' : '#F56565'}" tabindex="0" data-tip="${esc(tip)}"><title>${esc(tip)}</title></rect>`;
+      out += `<text class="label" x="${cx(i).toFixed(1)}" y="${H - 16}" text-anchor="middle">${MONTH_NAMES[+k.slice(5, 7) - 1] || k}${multiYear ? " '" + k.slice(2, 4) : ''}</text>`;
+    });
+    out += `<polyline class="line" points="${keys.map((k, i) => `${cx(i).toFixed(1)},${y(cumulative[i]).toFixed(1)}`).join(' ')}" fill="none" stroke="#4FD1C5" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`;
+    for (let i = 0; i < keys.length; i++) {
+      const runTip = `${monthLabel(keys[i])} · Interest running ${fmtMoney(cumulative[i])}`;
+      out += `<circle class="dot" cx="${cx(i).toFixed(1)}" cy="${y(cumulative[i]).toFixed(1)}" r="2.5" tabindex="0" data-tip="${esc(runTip)}"><title>${esc(runTip)}</title></circle>`;
+    }
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
     svg.innerHTML = out;
   }
@@ -894,6 +1069,7 @@ const IBKR = (function () {
     };
     for (const t of state.trades) {
       if (monthKey(t.date) !== key) continue;
+      if (state.include.length && state.include.indexOf(rootOf(t.symbol)) < 0) continue;
       if (state.exclude.length && state.exclude.indexOf(rootOf(t.symbol)) >= 0) continue;
       const where = classify(t);
       add(t.symbol || '—', where === 'options' ? 'Options' : where === 'assign' ? 'Assignment' : 'Stock (other)', Number(t.pnl) || 0);
@@ -914,21 +1090,29 @@ const IBKR = (function () {
   }
 
   /**
-   * #excludeChips — the 12 largest instruments by |P&L| (all months), plus any ticker that
-   * was excluded manually. aria-pressed mirrors "excluded"; the click handler toggles it.
+   * Root symbols ranked by |total P&L| (desc, name tiebreak) — shared by #excludeChips and the
+   * ticker picker in the include/exclude dialog.
    */
-  function renderExcludeChips() {
-    const el = byId('excludeChips');
-    if (!el) return;
+  function rankedRoots() {
     const totals = new Map();
     for (const t of state.trades) {
       const sym = rootOf(t.symbol);
       if (!sym) continue;
       totals.set(sym, (totals.get(sym) || 0) + (Number(t.pnl) || 0));
     }
-    const ranked = Array.from(totals.keys())
-      .sort((a, b) => Math.abs(totals.get(b)) - Math.abs(totals.get(a)) || (a < b ? -1 : a > b ? 1 : 0));
-    const chips = ranked.slice(0, 12);
+    return Array.from(totals.keys())
+      .sort((a, b) => Math.abs(totals.get(b)) - Math.abs(totals.get(a)) || (a < b ? -1 : a > b ? 1 : 0))
+      .map(sym => ({ sym, pnl: totals.get(sym) }));
+  }
+
+  /**
+   * #excludeChips — the 12 largest instruments by |P&L| (all months), plus any ticker that
+   * was excluded manually. aria-pressed mirrors "excluded"; the click handler toggles it.
+   */
+  function renderExcludeChips() {
+    const el = byId('excludeChips');
+    if (!el) return;
+    const chips = rankedRoots().map(r => r.sym).slice(0, 12);
     for (const sym of state.exclude) if (chips.indexOf(sym) < 0) chips.push(sym);
     el.innerHTML = chips.map(sym => {
       const excluded = state.exclude.indexOf(sym) >= 0;
@@ -939,11 +1123,47 @@ const IBKR = (function () {
     }).join('');
   }
 
-  /** Footer FX badge: source label + payload date + the exact rate being applied. */
+  /** #includeChips — every included root as a pressed chip; click removes it from the filter. */
+  function renderIncludeChips() {
+    const el = byId('includeChips');
+    if (!el) return;
+    el.innerHTML = state.include.map(sym => {
+      const title = `Included in every total — click to remove ${sym}`;
+      return `<button type="button" class="chip" data-ticker="${esc(sym)}" aria-pressed="true" title="${esc(title)}">${esc(sym)}</button>`;
+    }).join('');
+  }
+
+  const FX_CHAIN = 'frankfurter→er-api→currency-api';
+
+  /** "fetched 2026-09-26 04:12 UTC" for a provenance line (or a dash placeholder). */
+  function fxFetchedText(ts) {
+    const n = Number(ts) || 0;
+    const d = new Date(n);
+    return n && isFinite(d.getTime())
+      ? 'fetched ' + d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
+      : 'fetched —';
+  }
+  /** Human-readable provenance for the active rate — #fxBadge title + #fxDetail text. */
+  function fxProvenance(fx) {
+    const source = String(fx.source || '');
+    const payload = 'payload ' + (fx.date || '—');
+    const fetched = fxFetchedText(fx.fetchedAt);
+    if (source === 'manual') return `manual override · ${payload} · ${fetched} · no network lookup`;
+    if (source === 'approximate') return `approximate · ${payload} · ${fetched} · baked ${FX_BAKED_RATE} USD→AUD (offline fallback)`;
+    if (/stale/i.test(source)) return `${source} · ${payload} · ${fetched} · cached rate re-used (providers unreachable)`;
+    if (source === 'cache' || source === 'cached') return `cached · ${payload} · ${fetched} · ${FX_CHAIN} (≤ ${Math.round(FX_TTL_MS / 3600000)} h old)`;
+    return `${source} · ${payload} · ${fetched} · ${FX_CHAIN}`;
+  }
+
+  /** Footer FX badge: source label + payload date + rate; title/#fxDetail explain the fallback. */
   function renderFxBadge() {
     const fx = state.fx || {};
+    const badge = byId('fxBadge');
+    const detail = byId('fxDetail');
     if (!fx.source || fx.source === 'usd') { // no resolution yet
       setText('fxBadge', hasData() ? 'FX: loading' : 'FX: waiting for a CSV');
+      if (badge) badge.title = 'USD/AUD rate not resolved yet — the automatic lookup starts with the next CSV load.';
+      if (detail) detail.textContent = `${FX_CHAIN} (automatic) or a manual override`;
       return;
     }
     let label = String(fx.source);
@@ -952,19 +1172,39 @@ const IBKR = (function () {
     const rateText = isFinite(rate) && rate > 0 ? String(Math.round(rate * 10000) / 10000) : '—';
     const date = fx.date ? ' · ' + fx.date : '';
     setText('fxBadge', `FX: ${label}${date} · 1 USD=${rateText} AUD`);
+    const provenance = fxProvenance(fx);
+    if (badge) badge.title = provenance;
+    if (detail) detail.textContent = provenance;
+  }
+
+  let postedTitleBase = null;
+  /**
+   * #postedToggle carries a static title from the shell — keep it and append (or drop) the
+   * dynamic "no accruals in this file" warning instead of wiping the attribute.
+   */
+  function renderPostedToggleTitle() {
+    const toggle = byId('postedToggle');
+    if (!toggle) return;
+    if (postedTitleBase == null) postedTitleBase = String(toggle.getAttribute('title') || toggle.title || '');
+    const warn = (interestMode() === 'accrual' && !state.accruals.length)
+      ? 'No Interest Accruals section in this file — showing posted interest' : '';
+    toggle.title = warn ? (postedTitleBase ? postedTitleBase + ' — ' + warn : warn) : postedTitleBase;
   }
 
   function renderAll() {
     const useAccrual = interestMode() === 'accrual' && state.accruals.length > 0;
-    const months = aggregateByMonth(state.trades, state.cash, { interestMode: useAccrual ? 'accrual' : 'posted', accruals: state.accruals, exclude: state.exclude });
+    const months = aggregateByMonth(state.trades, state.cash, { interestMode: useAccrual ? 'accrual' : 'posted', accruals: state.accruals, include: state.include, exclude: state.exclude });
     state.months = months;
     renderYears(months);
     renderChips();
     renderKpis(months);
     renderChart(months);
     renderBreakdown(months);
+    renderInterest(months);
     renderTables(months);
     renderExcludeChips();
+    renderIncludeChips();
+    renderTickerCount();
     renderFxBadge();
     const empty = byId('emptyState');
     if (empty) {
@@ -972,8 +1212,7 @@ const IBKR = (function () {
       empty.hidden = has;
       empty.classList.toggle('is-hidden', has);
     }
-    const toggle = byId('postedToggle');
-    if (toggle) toggle.title = (interestMode() === 'accrual' && !state.accruals.length) ? 'No Interest Accruals section in this file — showing posted interest' : '';
+    renderPostedToggleTitle();
   }
 
   // ------------------------------------------------------------------ data
@@ -1058,6 +1297,13 @@ const IBKR = (function () {
       }
     } catch (err) { /* corrupt exclude list — start unfiltered */ }
     try {
+      const rawInclude = lsGet(INCLUDE_KEY);
+      if (rawInclude) {
+        const list = JSON.parse(rawInclude);
+        if (Array.isArray(list)) state.include = list.map(up).filter(Boolean);
+      }
+    } catch (err) { /* corrupt include list — keep every ticker */ }
+    try {
       const raw = localStorage.getItem(CACHE_KEY);
       if (!raw) return;
       const saved = JSON.parse(raw);
@@ -1076,13 +1322,228 @@ const IBKR = (function () {
     state.trades = []; state.cash = []; state.accruals = []; state.months = {};
     state.year = 'all'; state.month = 'all'; state.name = ''; state.format = '';
     state.exclude = [];
+    state.include = [];
     lsRemove(CACHE_KEY);
     lsRemove(EXCLUDE_KEY);
+    lsRemove(INCLUDE_KEY);
     const input = byId('fileInput');
     if (input) input.value = '';
     setFileLabel('No file selected');
     showError('');
     renderAll();
+    renderTickerList();
+  }
+
+  // -------------------------------------------------- ticker picker & tabs
+
+  let tickerReturnFocus = null;
+
+  /** Root symbols shown in the picker: every traded root, largest |P&L| first, plus manual picks. */
+  function tickerSymbols() {
+    const ranked = rankedRoots();
+    const seen = new Set(ranked.map(r => r.sym));
+    for (const sym of state.include.concat(state.exclude)) {
+      if (!seen.has(sym)) { seen.add(sym); ranked.push({ sym, pnl: 0 }); }
+    }
+    return ranked;
+  }
+
+  /** #tickerBtn count — how many tickers the modal currently offers. */
+  function renderTickerCount() {
+    const btn = pickById(TICKER_IDS.openers);
+    if (!btn) return;
+    const count = tickerSymbols().length;
+    btn.textContent = `Tickers (${count})`;
+    btn.title = count ? `${count} tickers in this statement` : 'Load a CSV to pick tickers';
+  }
+
+  /** Rows for the include/exclude picker (checkbox per mode, mutual exclusion per ticker). */
+  function renderTickerList() {
+    const body = pickById(TICKER_IDS.body);
+    if (!body) return;
+    const ranked = tickerSymbols();
+    const asTable = /^(TBODY|TABLE|THEAD)$/.test(String(body.tagName || '').toUpperCase());
+    body.innerHTML = ranked.map(r => {
+      const included = state.include.indexOf(r.sym) >= 0;
+      const excluded = state.exclude.indexOf(r.sym) >= 0;
+      const cls = r.pnl > 0 ? 'pos' : r.pnl < 0 ? 'neg' : '';
+      const boxes =
+        `<input type="checkbox" data-mode="include" aria-label="Include ${esc(r.sym)}"${included ? ' checked' : ''}>` +
+        `<input type="checkbox" data-mode="exclude" aria-label="Exclude ${esc(r.sym)}"${excluded ? ' checked' : ''}>`;
+      return asTable
+        ? `<tr data-symbol="${esc(r.sym)}"><td>${esc(r.sym)}</td><td class="num ${cls}">${fmtMoney(r.pnl)}</td><td class="num">${boxes}</td></tr>`
+        : `<label class="ticker-row" data-symbol="${esc(r.sym)}"><span class="ticker-row__symbol">${esc(r.sym)}</span><span class="ticker-row__pnl num ${cls}">${fmtMoney(r.pnl)}</span><span class="ticker-row__modes">${boxes}</span></label>`;
+    }).join('');
+    filterTickerList();
+  }
+
+  /** #tickerSearch — case-insensitive substring filter over the rendered rows. */
+  function filterTickerList() {
+    const body = pickById(TICKER_IDS.body);
+    if (!body || !body.querySelectorAll) return;
+    const input = pickById(TICKER_IDS.search);
+    const query = up(input ? input.value : '');
+    const rows = body.querySelectorAll('tr[data-symbol], label[data-symbol]');
+    let shown = 0;
+    for (const row of rows) {
+      const match = !query || up(row.getAttribute('data-symbol')).indexOf(query) >= 0;
+      row.hidden = !match;
+      if (match) shown++;
+    }
+    const count = pickById(['tickerCount', 'tickerListCount']);
+    if (count) count.textContent = query ? `${shown} / ${rows.length}` : `${rows.length}`;
+  }
+
+  function tickerRowOf(el) {
+    return el && el.closest ? el.closest('tr[data-symbol], label[data-symbol]') : null;
+  }
+
+  /** Include and exclude are mutually exclusive per ticker — checking one unchecks its twin. */
+  function onTickerListChange(e) {
+    const box = e.target;
+    if (!box || String(box.type) !== 'checkbox') return;
+    const mode = String(box.getAttribute('data-mode') || '');
+    if ((mode !== 'include' && mode !== 'exclude') || !box.checked) return;
+    const row = tickerRowOf(box);
+    if (!row || !row.querySelector) return;
+    const twin = row.querySelector(`input[data-mode="${mode === 'include' ? 'exclude' : 'include'}"]`);
+    if (twin) twin.checked = false;
+  }
+
+  /** Reads the picker's checkboxes into { include, exclude } symbol lists. */
+  function tickerSelection() {
+    const body = pickById(TICKER_IDS.body);
+    const out = { include: [], exclude: [] };
+    if (!body || !body.querySelectorAll) return out;
+    const rows = body.querySelectorAll('tr[data-symbol], label[data-symbol]');
+    for (const row of rows) {
+      const sym = up(row.getAttribute('data-symbol'));
+      if (!sym) continue;
+      const inc = row.querySelector ? row.querySelector('input[data-mode="include"]') : null;
+      const exc = row.querySelector ? row.querySelector('input[data-mode="exclude"]') : null;
+      if (inc && inc.checked) out.include.push(sym);
+      else if (exc && exc.checked) out.exclude.push(sym);
+    }
+    return out;
+  }
+
+  /** Apply = commit the pending checkboxes through the persisted setters. */
+  function applyTickerList() {
+    const selection = tickerSelection();
+    setInclude(selection.include);
+    setExclude(selection.exclude);
+    closeTickerList();
+  }
+
+  /** Clear = drop both filters (and repaint the picker's checkboxes). */
+  function clearTickerList() {
+    setInclude([]);
+    setExclude([]);
+    renderTickerList();
+  }
+
+  function restoreTickerFocus() {
+    const target = tickerReturnFocus;
+    tickerReturnFocus = null;
+    if (target && typeof target.focus === 'function') {
+      try { target.focus(); } catch (err) { /* element detached */ }
+    }
+  }
+
+  /** Open the picker: render fresh rows, show the native dialog, focus the search box. */
+  function openTickerList() {
+    renderTickerList();
+    const dialog = pickById(TICKER_IDS.dialog);
+    if (!dialog || typeof dialog.showModal !== 'function') return;
+    if (typeof document !== 'undefined' && document.activeElement) tickerReturnFocus = document.activeElement;
+    if (!dialog.open) dialog.showModal();
+    const search = pickById(TICKER_IDS.search);
+    if (search && typeof search.focus === 'function') search.focus();
+  }
+  function closeTickerList() {
+    const dialog = pickById(TICKER_IDS.dialog);
+    if (dialog && dialog.open && typeof dialog.close === 'function') { dialog.close(); return; }
+    restoreTickerFocus(); // without a real <dialog> the close event never fires
+    renderTickerList();
+  }
+  function onTickerDialogClose() {
+    renderTickerList();   // discards unapplied checkboxes: state is the source of truth
+    restoreTickerFocus();
+  }
+  /** <dialog closedby="any"> handles Esc/backdrop natively — keep a fallback for older shells. */
+  function onTickerDialogClick(e) {
+    const dialog = e.currentTarget;
+    if (!dialog || e.target !== dialog || typeof dialog.close !== 'function' || !dialog.getBoundingClientRect) return;
+    const r = dialog.getBoundingClientRect();
+    if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) return;
+    dialog.close(); // click landed on ::backdrop
+  }
+
+  /** Tab key for a button/panel: data-tab, aria-controls="tabX" or id="tabBtnX"/"tabX". */
+  function tabKeyOf(el) {
+    if (!el || !el.getAttribute) return '';
+    const explicit = up(el.getAttribute('data-tab'));
+    if (explicit) return explicit;
+    const target = el.getAttribute('data-tab-panel') || el.getAttribute('aria-controls');
+    if (target) return up(target).replace(/^TAB(?:BTN)?-?/, '').replace(/^PANEL-?/, '');
+    return up(el.id).replace(/^TAB(?:BTN)?-?/, '').replace(/^PANEL-?/, '');
+  }
+  function tabNodes(selector) {
+    if (typeof document === 'undefined' || !document.querySelectorAll) return [];
+    const nodes = document.querySelectorAll(selector);
+    const out = [], seen = new Set();
+    for (let i = 0; i < nodes.length; i++) if (!seen.has(nodes[i])) { seen.add(nodes[i]); out.push(nodes[i]); }
+    return out;
+  }
+  function tabButtons() { return tabNodes('[data-tab], .tab, [role="tab"]'); }
+  /** Panels the shell may use for a tab: [data-tab-panel], .tabpanel/#tabX/#panel-x, aria-controls. */
+  function tabPanels() {
+    const map = new Map();
+    for (const el of tabNodes('[data-tab-panel], .tabpanel, [role="tabpanel"]')) {
+      const name = tabKeyOf(el);
+      if (name && !map.has(name)) map.set(name, el);
+    }
+    for (const btn of tabButtons()) {
+      const name = tabKeyOf(btn);
+      if (!name || map.has(name)) continue;
+      const controls = btn.getAttribute('aria-controls');
+      const el = (controls ? byId(controls) : null) ||
+        byId('tab-' + name.toLowerCase()) || byId('panel-' + name.toLowerCase());
+      if (el && el !== btn) map.set(name, el);
+    }
+    return map;
+  }
+  /**
+   * showTab('interest') — mirrors aria-selected/tabindex on every tab button, toggles the
+   * matching panel's hidden attribute and (unless suppressHash) records #name in the URL.
+   */
+  function showTab(name, suppressHash) {
+    const tab = up(String(name == null ? '' : name).replace(/^#/, ''));
+    if (!tab) return;
+    for (const btn of tabButtons()) {
+      const active = tabKeyOf(btn) === tab;
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+      btn.setAttribute('tabindex', active ? '0' : '-1');
+    }
+    tabPanels().forEach((el, panelName) => { el.hidden = panelName !== tab; });
+    if (!suppressHash && typeof history !== 'undefined' && history && history.replaceState && typeof location !== 'undefined') {
+      const want = '#' + tab.toLowerCase();
+      if (String(location.hash || '') !== want) history.replaceState(null, '', want);
+    }
+  }
+  function hashTabName() {
+    return typeof location === 'undefined' ? '' : String(location.hash || '').replace(/^#\/?/, '').replace(/^tab-/, '');
+  }
+  function onHashChange() { const name = hashTabName(); if (name) showTab(name, true); }
+
+  /** Document-level delegation: tab buttons and any ticker-picker opener. */
+  function onDocumentClick(e) {
+    const target = e.target;
+    if (!target || !target.closest) return;
+    const tabBtn = target.closest('[data-tab], .tab, [role="tab"]');
+    if (tabBtn) { showTab(tabKeyOf(tabBtn), false); return; }
+    const openerSelector = '[data-open-tickers], ' + TICKER_IDS.openers.map(id => '#' + id).join(', ');
+    if (target.closest(openerSelector)) openTickerList();
   }
 
   // ------------------------------------------------------------ listeners
@@ -1134,6 +1595,11 @@ const IBKR = (function () {
     if (t) showTipFor(t); else hideBreakdownTip();
   }
   function onBreakdownFocus(e) { const t = tipTarget(e); if (t) showTipFor(t); }
+  function onInterestMove(e) {
+    const t = tipTarget(e);
+    if (t) showTipFor(t); else hideInterestTip();
+  }
+  function onInterestFocus(e) { const t = tipTarget(e); if (t) showTipFor(t); }
   function onCurrencyChange() {
     if (currencyMode() === 'aud' && state.fx.source === 'usd') resolveFxOnLoad();
     renderAll();
@@ -1168,6 +1634,16 @@ const IBKR = (function () {
     const at = list.indexOf(sym);
     if (at >= 0) list.splice(at, 1); else list.push(sym);
     setExclude(list);
+  }
+  function onIncludeChipsClick(e) {
+    const btn = e.target && e.target.closest ? e.target.closest('#includeChips button[data-ticker]') : null;
+    if (!btn) return;
+    const sym = up(btn.getAttribute('data-ticker'));
+    if (!sym) return;
+    const list = getInclude();
+    const at = list.indexOf(sym);
+    if (at >= 0) list.splice(at, 1);
+    setInclude(list);
   }
   function syncFxInput() {
     const input = byId('fxInput');
@@ -1219,9 +1695,27 @@ const IBKR = (function () {
     listen(byId('breakdownSvg'), 'mouseleave', hideBreakdownTip);
     listen(byId('breakdownSvg'), 'focusin', onBreakdownFocus);
     listen(byId('breakdownSvg'), 'focusout', hideBreakdownTip);
+    listen(byId('interestSvg'), 'mousemove', onInterestMove);
+    listen(byId('interestSvg'), 'mouseleave', hideInterestTip);
+    listen(byId('interestSvg'), 'focusin', onInterestFocus);
+    listen(byId('interestSvg'), 'focusout', hideInterestTip);
     listen(byId('excludeInput'), 'keydown', onExcludeKeydown);
     listen(byId('excludeInput'), 'input', onExcludeInput);
     listen(byId('excludeChips'), 'click', onExcludeChipsClick);
+    listen(byId('includeChips'), 'click', onIncludeChipsClick);
+    listen(pickById(TICKER_IDS.search), 'input', filterTickerList);
+    listen(pickById(TICKER_IDS.body), 'change', onTickerListChange);
+    listen(pickById(TICKER_IDS.apply), 'click', applyTickerList);
+    listen(pickById(TICKER_IDS.clear), 'click', clearTickerList);
+    listen(pickById(TICKER_IDS.close), 'click', closeTickerList);
+    const tickerDialog = pickById(TICKER_IDS.dialog);
+    if (tickerDialog) {
+      listen(tickerDialog, 'close', onTickerDialogClose);
+      listen(tickerDialog, 'click', onTickerDialogClick);
+    }
+    if (typeof document !== 'undefined') listen(document, 'click', onDocumentClick);
+    if (typeof window !== 'undefined') listen(window, 'hashchange', onHashChange);
+    onHashChange(); // deep link (#interest, …) selects a tab on load
     listen(byId('fxInput'), 'change', onFxInputChange);
     listen(byId('fxReset'), 'click', onFxResetClick);
     syncFxInput();
@@ -1247,7 +1741,10 @@ const IBKR = (function () {
     parseCsv, detectFormat, parseFlex, parseActivityStatement, parseCsvText,
     aggregateByMonth, classify, cashCategory, isAssignmentCode, monthKey, monthLabel, rootOf,
     fmtMoney, fmtCompact, disp, currencyMode, init, loadText, clearAll, renderAll, renderBreakdown, incomeOf, state,
-    getExclude, setExclude, fx: { keys: FX_KEYS, baked: FX_BAKED_RATE, fetchFx, resolveFxOnLoad }
+    getExclude, setExclude, getInclude, setInclude,
+    monthTipText, renderInterest, rankedRoots,
+    renderTickerList, applyTickerList, clearTickerList, openTickerList, closeTickerList, showTab,
+    fx: { keys: FX_KEYS, baked: FX_BAKED_RATE, fetchFx, resolveFxOnLoad }
   };
 })();
 
