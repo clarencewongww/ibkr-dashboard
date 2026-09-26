@@ -14,7 +14,8 @@
  * DOM contract (see index.html): fileInput dropZone yearSelect monthChips kpiNet
  * kpiMonth kpiBest kpiAvg chartSvg chartTip breakdownSvg breakdownTip monthlyBody
  * drillBody drillTitle emptyState errorBox clearBtn postedToggle fileLabel,
- * excludeInput excludeChips fxBadge fxDetail fxInput fxReset, plus the optional
+ * includeChips tickerBtn toTopTickers filterNote tickerSearchClear fxBadge fxDetail
+ * fxInput fxReset, plus the optional
  * input[name="currencyToggle"] USD/AUD switch, the interest card (interestSvg
  * interestTip kpiIntTotal kpiIntAvgDay kpiIntBest kpiIntShare interestBody),
  * the ticker picker (tickerModal tickerSearch tickerList tickerApply tickerClear)
@@ -942,6 +943,9 @@ const IBKR = (function () {
   const TICKER_IDS = {
     dialog: ['tickerModal', 'tickerDialog'],
     search: ['tickerSearch', 'tickerFilter'],
+    searchClear: ['tickerSearchClear', 'tickerClearSearch'],
+    note: ['filterNote', 'tickerFilterNote'],
+    toTop: ['toTopTickers', 'tickersToTop'],
     body: ['tickerList', 'tickerListBody', 'tickerRows', 'tickerBody'],
     apply: ['tickerApply', 'tickerApplyBtn'],
     clear: ['tickerClear', 'tickerClearBtn'],
@@ -1112,8 +1116,8 @@ const IBKR = (function () {
   }
 
   /**
-   * Root symbols ranked by |total P&L| (desc, name tiebreak) — shared by #excludeChips and the
-   * ticker picker in the include/exclude dialog.
+   * Root symbols ranked by |total P&L| (desc, name tiebreak) — feeds the ticker picker
+   * in the include/exclude dialog.
    */
   function rankedRoots() {
     const totals = new Map();
@@ -1127,24 +1131,6 @@ const IBKR = (function () {
       .map(sym => ({ sym, pnl: totals.get(sym) }));
   }
 
-  /**
-   * #excludeChips — the 12 largest instruments by |P&L| (all months), plus any ticker that
-   * was excluded manually. aria-pressed mirrors "excluded"; the click handler toggles it.
-   */
-  function renderExcludeChips() {
-    const el = byId('excludeChips');
-    if (!el) return;
-    const chips = rankedRoots().map(r => r.sym).slice(0, 12);
-    for (const sym of state.exclude) if (chips.indexOf(sym) < 0) chips.push(sym);
-    el.innerHTML = chips.map(sym => {
-      const excluded = state.exclude.indexOf(sym) >= 0;
-      const title = excluded
-        ? `Excluded from every total — click to include ${sym}`
-        : `Click to exclude ${sym} from every total`;
-      return `<button type="button" class="chip" data-ticker="${esc(sym)}" aria-pressed="${excluded}" title="${esc(title)}">${esc(sym)}</button>`;
-    }).join('');
-  }
-
   /** #includeChips — every included root as a pressed chip; click removes it from the filter. */
   function renderIncludeChips() {
     const el = byId('includeChips');
@@ -1153,6 +1139,20 @@ const IBKR = (function () {
       const title = `Included in every total — click to remove ${sym}`;
       return `<button type="button" class="chip" data-ticker="${esc(sym)}" aria-pressed="true" title="${esc(title)}">${esc(sym)}</button>`;
     }).join('');
+  }
+
+  /**
+   * #filterNote — one-line summary of the active ticker filters, hidden while both lists
+   * are empty: "Including only A, B · Excluding C" (either empty clause is omitted).
+   */
+  function renderFilterNote() {
+    const el = pickById(TICKER_IDS.note);
+    if (!el) return;
+    const parts = [];
+    if (state.include.length) parts.push('Including only ' + state.include.join(', '));
+    if (state.exclude.length) parts.push('Excluding ' + state.exclude.join(', '));
+    el.textContent = parts.join(' · ');
+    el.hidden = parts.length === 0;
   }
 
   const FX_CHAIN = 'frankfurter→er-api→currency-api';
@@ -1224,8 +1224,8 @@ const IBKR = (function () {
     renderBreakdown(months);
     renderInterest(months);
     renderTables(months);
-    renderExcludeChips();
     renderIncludeChips();
+    renderFilterNote();
     renderTickerCount();
     renderFxBadge();
     const empty = byId('emptyState');
@@ -1416,6 +1416,14 @@ const IBKR = (function () {
     if (count) count.textContent = query ? `${shown} / ${rows.length}` : `${rows.length}`;
   }
 
+  /** #tickerSearchClear — empty the modal's filter box, repaint the rows and keep typing. */
+  function onSearchClear() {
+    const search = pickById(TICKER_IDS.search);
+    if (search) search.value = '';
+    filterTickerList();
+    if (search && typeof search.focus === 'function') search.focus();
+  }
+
   function tickerRowOf(el) {
     return el && el.closest ? el.closest('tr[data-symbol], label[data-symbol]') : null;
   }
@@ -1457,11 +1465,25 @@ const IBKR = (function () {
     closeTickerList();
   }
 
-  /** Clear = drop both filters (and repaint the picker's checkboxes). */
+  /** Clear = drop both filters, empty the search box and stay open for a fresh pick. */
   function clearTickerList() {
     setInclude([]);
     setExclude([]);
+    const search = pickById(TICKER_IDS.search);
+    if (search) search.value = '';
     renderTickerList();
+    filterTickerList(); // the rebuilt rows ignore the now-empty query; this refreshes the count
+  }
+
+  /** #toTopTickers (summary header) — scroll back to the toolbar and focus #tickerBtn. */
+  function onToTopTickers() {
+    const toolbar = typeof document !== 'undefined' && document.querySelector ? document.querySelector('.toolbar') : null;
+    if (toolbar && typeof toolbar.scrollIntoView === 'function') {
+      const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      toolbar.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    }
+    const btn = byId('tickerBtn');
+    if (btn && typeof btn.focus === 'function') btn.focus({ preventScroll: true });
   }
 
   function restoreTickerFocus() {
@@ -1688,37 +1710,6 @@ const IBKR = (function () {
     if (currencyMode() === 'aud' && state.fx.source === 'usd') resolveFxOnLoad();
     renderAll();
   }
-  /** Add every token in #excludeInput to the exclude list, then clear the box. */
-  function commitExcludeInput() {
-    const input = byId('excludeInput');
-    if (!input) return;
-    const parts = String(input.value || '').split(/[,;]+/).map(up).filter(Boolean);
-    if (!parts.length) return;
-    setExclude(getExclude().concat(parts));
-    input.value = '';
-  }
-  function onExcludeKeydown(e) {
-    const key = e.key;
-    if (key !== 'Enter' && key !== ',' && key !== ';') return;
-    e.preventDefault(); // the chip replaces the separator
-    commitExcludeInput();
-  }
-  // paste / IME path: a value that already carries separators commits every token
-  function onExcludeInput(e) {
-    const input = e.target;
-    if (!input || !/[,;]/.test(String(input.value || ''))) return;
-    commitExcludeInput();
-  }
-  function onExcludeChipsClick(e) {
-    const btn = e.target && e.target.closest ? e.target.closest('#excludeChips button[data-ticker]') : null;
-    if (!btn) return;
-    const sym = up(btn.getAttribute('data-ticker'));
-    if (!sym) return;
-    const list = getExclude();
-    const at = list.indexOf(sym);
-    if (at >= 0) list.splice(at, 1); else list.push(sym);
-    setExclude(list);
-  }
   function onIncludeChipsClick(e) {
     const btn = e.target && e.target.closest ? e.target.closest('#includeChips button[data-ticker]') : null;
     if (!btn) return;
@@ -1788,11 +1779,10 @@ const IBKR = (function () {
     listen(byId('interestSvg'), 'mouseleave', hideInterestTip);
     listen(byId('interestSvg'), 'focusin', onInterestFocus);
     listen(byId('interestSvg'), 'focusout', hideInterestTip);
-    listen(byId('excludeInput'), 'keydown', onExcludeKeydown);
-    listen(byId('excludeInput'), 'input', onExcludeInput);
-    listen(byId('excludeChips'), 'click', onExcludeChipsClick);
     listen(byId('includeChips'), 'click', onIncludeChipsClick);
+    listen(pickById(TICKER_IDS.toTop), 'click', onToTopTickers);
     listen(pickById(TICKER_IDS.search), 'input', filterTickerList);
+    listen(pickById(TICKER_IDS.searchClear), 'click', onSearchClear);
     listen(pickById(TICKER_IDS.body), 'change', onTickerListChange);
     listen(pickById(TICKER_IDS.apply), 'click', applyTickerList);
     listen(pickById(TICKER_IDS.clear), 'click', clearTickerList);

@@ -324,6 +324,13 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 .btn--outline:hover { border-color: var(--teal); color: var(--teal-dark); background: var(--surface); }
 
+/* compact variant: the summary-header ticker shortcut and similar tight spots */
+.btn--sm {
+  min-height: 30px;
+  padding: 4px 12px;
+  font-size: 12.5px;
+}
+
 .select {
   appearance: none;
   min-height: 40px;
@@ -342,7 +349,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 .select:hover { border-color: var(--muted); }
 
-/* text input — exclude tickers (#excludeInput) and the manual FX rate (#fxInput) */
+/* text input — ticker search (#tickerSearch) and the manual FX rate (#fxInput) */
 .input {
   width: 100%;
   min-height: 40px;
@@ -430,6 +437,14 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 }
 
 #includeWrap .chips { margin-bottom: 0; }
+
+/* #filterNote — one-line summary of the active ticker filters (hidden while empty) */
+.filter-note {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
 
 .file-label {
   max-width: 200px;
@@ -848,7 +863,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   color: var(--teal-dark);
 }
 
-/* exclude filter — month chips on the left, ticker exclusions on the right */
+/* month filter chips */
 .filter-bar {
   display: flex;
   flex-wrap: wrap;
@@ -859,25 +874,6 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 }
 
 .filter-bar .chips { margin-bottom: 0; }
-
-#excludeWrap {
-  display: grid;
-  gap: 6px;
-  flex: 1 1 280px;
-  max-width: 420px;
-  min-width: 0;
-}
-
-#excludeWrap .field__label { color: var(--muted); }
-
-#excludeWrap .input { font-size: 13.5px; }
-
-/* an excluded ticker reads as a warning, never as a selection */
-#excludeChips .chip[aria-pressed="true"] {
-  background: var(--red-tint);
-  border-color: var(--red);
-  color: #822727;
-}
 
 /* --------------------------------------------------------------- tables --- */
 .table-card { min-width: 0; }
@@ -1185,6 +1181,33 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 }
 
 dialog::backdrop { background: rgba(21, 25, 40, .48); }
+
+/* search box with its inline clear button (#tickerSearchClear) */
+.ticker-search { position: relative; }
+
+.ticker-search .input { padding-right: 40px; }
+
+.search-clear {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease;
+}
+
+.search-clear:hover { background: var(--surface); color: var(--ink); }
 
 /* app.js fallback for engines without <dialog>.showModal(): keep the opened
    picker centred and dim the page, mirroring the native modal chrome */

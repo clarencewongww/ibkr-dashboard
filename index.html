@@ -46,15 +46,16 @@
              #interestTip — same hidden/[hidden] contract as #chartTip
              #interestBody — tbody of #interestTable; app.js renders its rows
   Tickers    #tickerBtn — opens #tickerModal; its label text is app.js-owned ("Tickers (n)")
-             #tickerModal <dialog> · #tickerSearch filter input · #tickerList is a DIV and
-             receives label.ticker-row rows (symbol · P&L · include/exclude checkboxes) ·
-             #tickerApply / #tickerClear / #tickerClose buttons. app.js calls
-             showModal()/close(); Esc/backdrop are native (an open-attribute fallback
-             takes over when showModal is unavailable). .ticker-list/.ticker-row styles
-             live in styles.css.
-             #includeChips — same chip contract as #excludeChips (button.chip[data-ticker],
-             aria-pressed="true"; click removes the include); #includeWrap groups the
-             Tickers button with those chips
+             #tickerModal <dialog> · #tickerSearch filter input · #tickerSearchClear button
+             empties that filter · #tickerList is a DIV and receives label.ticker-row rows
+             (symbol · P&L · include/exclude checkboxes) · #tickerApply / #tickerClear /
+             #tickerClose buttons. app.js calls showModal()/close(); Esc/backdrop are
+             native (an open-attribute fallback takes over when showModal is unavailable).
+             .ticker-list/.ticker-row styles live in styles.css.
+             #includeChips — chip contract: button.chip[data-ticker] with
+             aria-pressed="true"; click removes the include. #includeWrap groups the
+             Tickers button with those chips and #filterNote (aria-live="polite" summary
+             of the active ticker filters)
   Basis      #postedToggle  fieldset; radios name="postedToggle" value="posted"|"accrual".
              app.js listens for "change" on the fieldset (radios bubble) and reads
              input[name="postedToggle"]:checked → value "accrual" = accrual interest.
@@ -66,6 +67,8 @@
              subs   #kpiMonthSub #kpiBestSub (month name)
   Month bar  #monthChips receives button.chip[data-month][aria-pressed] elements
              — .is-active / [aria-pressed="true"] is the selected state
+             #toTopTickers — "Tickers ↑" in the Monthly summary header: scrolls the
+             toolbar into view and focuses #tickerBtn
   Chart      #chartSvg — 720x300 viewBox; app.js re-renders inside it and re-declares
                         the same viewBox, so the shell must keep the 720x300 box.
              #chartTip  — toggled with the hidden attribute, positioned by app.js
@@ -88,9 +91,6 @@
                         tooltip via .fx-wrap (app.js writes both)
              #fxDetail app.js fills it with the full source detail; .fx-detail is the
                         footer tooltip, hidden until #fxBadge is hovered or focused
-  Exclude    #excludeInput  free-text tickers, comma separated ("AMD, NVDA")
-             #excludeChips  receives button.chip[data-ticker][aria-pressed] elements;
-                            aria-pressed="true" = ticker is excluded from every aggregate
   Breakdown  #breakdownCard  card shell · #breakdownSvg — 720x300 viewBox, same contract
              as #chartSvg (app.js re-declares the viewBox and draws .chart primitives)
              #breakdownTip — same hidden/[hidden] contract as #chartTip
@@ -191,6 +191,7 @@
                 aria-haspopup="dialog" aria-controls="tickerModal">Tickers (0)</button>
         <div id="includeChips" class="chips" role="group" aria-labelledby="includeLabel"></div>
       </div>
+      <p id="filterNote" class="filter-note" aria-live="polite" hidden></p>
     </div>
 
   </div>
@@ -366,25 +367,21 @@
             <h2 class="card__title" id="summaryTitle">Monthly summary</h2>
             <p class="card__sub">Select a month to drill into its instruments.</p>
           </div>
-          <span class="card__icon" aria-hidden="true">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <rect width="18" height="18" x="3" y="3" rx="2"></rect>
-              <path d="M3 9h18"></path>
-              <path d="M3 15h18"></path>
-              <path d="M12 3v18"></path>
-            </svg>
-          </span>
+          <div class="card__head-actions">
+            <button id="toTopTickers" class="btn btn--sm btn--outline" type="button">Tickers ↑</button>
+            <span class="card__icon" aria-hidden="true">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <rect width="18" height="18" x="3" y="3" rx="2"></rect>
+                <path d="M3 9h18"></path>
+                <path d="M3 15h18"></path>
+                <path d="M12 3v18"></path>
+              </svg>
+            </span>
+          </div>
         </div>
 
         <div class="filter-bar">
           <div id="monthChips" class="chips" role="group" aria-label="Filter by month"></div>
-
-          <div id="excludeWrap">
-            <label class="field__label" for="excludeInput">Exclude tickers</label>
-            <input id="excludeInput" class="input" type="text" placeholder="e.g. AMD, NVDA"
-                   autocomplete="off" spellcheck="false">
-            <div id="excludeChips" class="chips" role="group" aria-label="Excluded tickers"></div>
-          </div>
         </div>
 
         <div class="table-scroll" role="region" aria-label="Monthly summary" tabindex="0">
@@ -544,9 +541,12 @@
      with an app.js open-attribute fallback for engines without showModal. -->
 <dialog id="tickerModal" class="modal" aria-labelledby="tickerModalTitle">
   <h2 class="modal__title" id="tickerModalTitle">Tickers</h2>
-  <label class="visually-hidden" for="tickerSearch">Filter tickers</label>
-  <input id="tickerSearch" class="input" type="text" placeholder="Filter tickers"
-         autocomplete="off" spellcheck="false">
+  <div class="ticker-search">
+    <label class="visually-hidden" for="tickerSearch">Filter tickers</label>
+    <input id="tickerSearch" class="input" type="text" placeholder="Filter tickers"
+           autocomplete="off" spellcheck="false">
+    <button id="tickerSearchClear" class="search-clear" type="button" aria-label="Clear search">×</button>
+  </div>
   <!-- column key for the rows app.js renders (label.ticker-row: symbol · P&L · In/Ex boxes);
        hidden while the list is empty -->
   <div class="ticker-head" aria-hidden="true">

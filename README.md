@@ -113,15 +113,16 @@ switch views; the Interest tab renders four KPIs, a bar chart and a per-month ta
 
 ### Exclude
 
-**Exclude tickers** removes instruments from every aggregate — KPIs, both charts, the month table
-and the drill-down:
+**Exclude** removes instruments from every aggregate — KPIs, both charts, the month table and the
+drill-down. Exclusions are set from the **Tickers** modal only:
 
-- Type a ticker (or several, comma-separated: `AMD, NVDA`) and press Enter, or click a chip.
-- The chips row shows the **12 largest instruments by absolute P&L**, plus any excluded ticker
-  that isn't already listed, so an exclusion can always be undone. `aria-pressed` mirrors the state.
+- Open **Tickers (n)** in the toolbar, tick a symbol's **Ex** checkbox and press **Apply** to commit
+  and persist the list; **Clear** drops it again.
 - Matching is case-insensitive and uses the **root symbol**: OCC-style padded option symbols are
   trimmed at the first space, so excluding `AMD` also hides `AMD   260220P00185000`.
 - The list persists in `localStorage` under **`ibkr-exclude-v1`** and survives refreshes.
+- The toolbar note (`#filterNote`) summarises the active filters — `Including only A, B ·
+  Excluding C` — and stays hidden while both lists are empty.
 - Ticker-less cash rows (e.g. broker interest) are never excluded.
 - Excluding only hides instruments from the display; **concatenated files still double-count** if
   you load overlapping periods — excluded or not, load each month once.
@@ -137,12 +138,15 @@ matching and persisted in `localStorage` under **`ibkr-include-v1`**:
 - **Tickers modal.** The **Tickers (n)** button opens a `<dialog>` listing every traded root
   (largest |P&L| first, plus any manual pick) with symbol, P&L, and **In / Ex** checkboxes that are
   mutually exclusive per row — checking one unchecks its twin. **Apply** commits and persists both
-  lists, **Clear** drops both filters, and **Close** / Esc / backdrop discards unapplied changes
-  (state is the source of truth).
+  lists, **Clear** drops both filters and empties the search box without closing the modal, and
+  **Close** / Esc / backdrop discards unapplied changes (state is the source of truth).
 - **Search.** The modal's filter box is a case-insensitive substring match over the rendered
-  symbols; the count reads `shown / total` while a query is active.
+  symbols; the count reads `shown / total` while a query is active, and the **×** button
+  (`#tickerSearchClear`) clears the query.
 - **Chips.** Every included root appears as a pressed chip next to the button; click a chip to drop
   that ticker from the allow-list.
+- **Jump back.** The Monthly summary header carries a **Tickers ↑** shortcut (`#toTopTickers`) that
+  scrolls the toolbar into view and focuses the modal button.
 - **Ticker-less cash rows** (e.g. broker interest) have no root symbol, so **include never filters
   them** — interest and other cash buckets stay in the totals while an allow-list is active.
 - As with Exclude, hiding is display-only: **overlapping concatenated files still double-count**.
@@ -200,7 +204,7 @@ memory; nothing is rewritten.
 
 | Path | Role |
 | --- | --- |
-| `index.html` | Markup contract: header, month/year chips, chart cards, table, `#postedToggle`, `#excludeInput` / `#excludeChips`, `#fxInput` / `#fxReset` / `#fxBadge`, `#clearBtn`, file input. |
+| `index.html` | Markup contract: header, month/year chips, chart cards, table, `#postedToggle`, `#tickerBtn` / `#tickerSearchClear` / `#filterNote` / `#toTopTickers`, `#fxInput` / `#fxReset` / `#fxBadge`, `#clearBtn`, file input. |
 | `styles.css` | All styling and design tokens (CSS custom properties in `:root`); no external assets. |
 | `app.js` | CSV parser (Flex + Activity Statement), month aggregation, root-symbol exclude filter, USD/AUD rate chain, rendering. Exposes `window.IBKR` for debugging. |
 | `data/` | Your local IBKR exports and scratch space (gitignored). |
