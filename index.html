@@ -33,7 +33,10 @@
                         (including the "Choose file" affordance, a non-interactive span)
                         is the click target through that handler.
              #dropZone  drop target — app.js toggles the class .is-dragover
-             #clearBtn  reset button
+             #clearBtn  reset button · #csvHelpBtn round "i" beside Load CSV →
+                        opens #csvHelpModal (native <dialog>, same wiring as
+                        #tickerModal: app.js calls showModal/close, with an
+                        open-attribute fallback for engines without showModal)
              #yearSelect app.js owns the <option> list ("all" = All years)
              #fileLabel  file name text ("No file selected" / "<name> (cached)")
              these controls now live in the .toolbar band (moved off the dark hero
@@ -72,23 +75,29 @@
              Posted/Accrual text, revealed on #basisInfo hover / focus-visible.
              The .info + .info-tip pair is shared: #incomeInfo/#incomeHelp in the
              breakdown legend uses the same CSS reveal and #basisInfo's clamp helper.
-  KPI        values #kpiNet #kpiMonth #kpiBest #kpiAvg  ("—" while empty)
-             deltas #kpiNetDelta #kpiMonthDelta #kpiBestDelta #kpiAvgDelta
+  KPI        values #kpiNet #kpiMonth #kpiAvg #kpiBest  ("—" while empty; the cards
+             sit in that order left → right: Total · Latest · Avg · Best)
+             deltas #kpiNetDelta #kpiMonthDelta #kpiAvgDelta #kpiBestDelta
                     (app.js rewrites className to "delta delta--up|down|flat";
                      #kpiNetDelta also carries a title, "Income $… = Interest $… + Div $…",
                      refreshed each render and untouched by setDelta)
              subs   #kpiMonthSub #kpiBestSub (month name)
   Month bar  #monthChips receives button.chip[data-month][aria-pressed] elements
-             — .is-active / [aria-pressed="true"] is the selected state
-             #toTopTickers — "Tickers ↑" in the Monthly summary header: scrolls the
-             toolbar into view and focuses #tickerBtn
+             — .is-active / [aria-pressed="true"] is the selected state. The node
+             sits in the drill-down card header; the Monthly summary always lists
+             every visible month (year filter only), the drill-down follows the
+             picked month (a pick also snaps #yearSelect to that month's year)
+             #toTopTickers — "Tickers ↑" in the Monthly summary header: scrolls
+             #tickerBtn into view, focuses it and flashes .glow for 2.5s
   Chart      #chartSvg — 720x300 viewBox; app.js re-renders inside it and re-declares
                         the same viewBox, so the shell must keep the 720x300 box.
              #chartTip  — toggled with the hidden attribute, positioned by app.js
                            relative to .chart-wrap (transform lifts it above the bar)
              #chartPlaceholder — pre-JS placeholder, replaced on the first render
-             styles.css owns .grid .label .bar .bar--neg .line .dot .chart__hint;
-             inline fill/stroke on .bar/.line win over the CSS fallbacks
+             styles.css owns .grid .grid--left/right .label .label--left/right
+             .bar .bar--neg .line .dot .chart__hint; inline fill/stroke on
+             .bar/.line win over the CSS fallbacks. Left axis (bars) = green,
+             right axis (running line) = teal-dark
   Tables     #monthlyTable > tbody#monthlyBody   cols: Month | Net P&L | Trades | Avg / trade
              #drillTable   > tbody#drillBody     cols: Symbol | Asset class | Trades | Net P&L
              #drillTitle   drill card heading
@@ -191,6 +200,9 @@
           </svg>
           Load CSV
         </label>
+        <button id="csvHelpBtn" class="info" type="button"
+                aria-haspopup="dialog" aria-controls="csvHelpModal"
+                aria-label="How to export the CSV from IBKR">i</button>
         <span id="fileLabel" class="file-label">No file selected</span>
         <button id="clearBtn" class="btn btn--ghost" type="button">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -203,7 +215,7 @@
     </div>
 
     <div id="includeWrap" class="field">
-      <span class="field__label" id="includeLabel">Include tickers</span>
+      <span class="field__label" id="includeLabel">Include/exclude tickers</span>
       <div class="include-row">
         <button id="tickerBtn" class="btn btn--outline" type="button"
                 aria-haspopup="dialog" aria-controls="tickerModal">Tickers (0)</button>
@@ -303,6 +315,19 @@
 
       <article class="card kpi">
         <div class="kpi__head">
+          <p class="kpi__label">Avg / month</p>
+          <span class="kpi__icon kpi__icon--slate" aria-hidden="true">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            </svg>
+          </span>
+        </div>
+        <p class="kpi__value num" id="kpiAvg">—</p>
+        <p class="kpi__meta"><span class="delta delta--flat" id="kpiAvgDelta">Awaiting CSV</span></p>
+      </article>
+
+      <article class="card kpi">
+        <div class="kpi__head">
           <p class="kpi__label">Best month</p>
           <span class="kpi__icon kpi__icon--green" aria-hidden="true">
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -314,26 +339,15 @@
         <p class="kpi__value num" id="kpiBest">—</p>
         <p class="kpi__meta"><span class="delta delta--flat" id="kpiBestDelta">Awaiting CSV</span> <span class="kpi__sub" id="kpiBestSub"></span></p>
       </article>
-
-      <article class="card kpi">
-        <div class="kpi__head">
-          <p class="kpi__label">Avg / month</p>
-          <span class="kpi__icon kpi__icon--slate" aria-hidden="true">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-            </svg>
-          </span>
-        </div>
-        <p class="kpi__value num" id="kpiAvg">—</p>
-        <p class="kpi__meta"><span class="delta delta--flat" id="kpiAvgDelta">Awaiting CSV</span></p>
-      </article>
     </section>
 
-    <!-- 2x2 on desktop: monthly chart | monthly summary on the first row,
-         breakdown | drill-down on the second (DOM order = reading order). -->
+    <!-- Desktop ≥1024px: two explicit columns — left (1.55fr) = chart + income
+         breakdown, right (1fr) = monthly summary + drill-down; styles.css places
+         the cards by id/class. DOM order is chart → breakdown → summary → drill,
+         so the single-column mobile layout stays graphs-first. -->
     <div class="split">
 
-      <section class="card chart-card" aria-labelledby="chartTitle">
+      <section class="card chart-card" id="chartCard" aria-labelledby="chartTitle">
         <div class="card__head">
           <div class="card__head-copy">
             <h2 class="card__title" id="chartTitle">Monthly realised P&amp;L</h2>
@@ -379,46 +393,6 @@
         </ul>
       </section>
 
-      <section class="card table-card" aria-labelledby="summaryTitle">
-        <div class="card__head">
-          <div class="card__head-copy">
-            <h2 class="card__title" id="summaryTitle">Monthly summary</h2>
-            <p class="card__sub">Select a month to drill into its instruments.</p>
-          </div>
-          <div class="card__head-actions">
-            <button id="toTopTickers" class="btn btn--sm btn--outline" type="button">Tickers ↑</button>
-            <span class="card__icon" aria-hidden="true">
-              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <rect width="18" height="18" x="3" y="3" rx="2"></rect>
-                <path d="M3 9h18"></path>
-                <path d="M3 15h18"></path>
-                <path d="M12 3v18"></path>
-              </svg>
-            </span>
-          </div>
-        </div>
-
-        <div class="filter-bar">
-          <div id="monthChips" class="chips" role="group" aria-label="Filter by month"></div>
-        </div>
-
-        <div class="table-scroll" role="region" aria-label="Monthly summary" tabindex="0">
-          <table id="monthlyTable" class="table">
-            <caption class="visually-hidden">Monthly realised profit and loss summary</caption>
-            <thead>
-              <tr>
-                <th scope="col">Month</th>
-                <th scope="col">Net P&amp;L</th>
-                <th scope="col">Trades</th>
-                <th scope="col">Avg / trade</th>
-              </tr>
-            </thead>
-            <tbody id="monthlyBody"></tbody>
-          </table>
-        </div>
-        <p class="table-placeholder">No months yet — the table fills in as soon as a CSV loads.</p>
-      </section>
-
       <section class="card chart-card" id="breakdownCard" aria-labelledby="breakdownTitle">
         <div class="card__head">
           <div class="card__head-copy">
@@ -446,7 +420,46 @@
         </ul>
       </section>
 
-      <section class="card table-card" aria-labelledby="drillTitle">
+      <!-- Monthly summary: always every visible month (year filter only) — the
+           month chips live in the drill-down header below, and a row click is
+           what selects the drill month. -->
+      <section class="card table-card" id="summaryCard" aria-labelledby="summaryTitle">
+        <div class="card__head">
+          <div class="card__head-copy">
+            <h2 class="card__title" id="summaryTitle">Monthly summary</h2>
+            <p class="card__sub">Select a month to drill into its instruments.</p>
+          </div>
+          <div class="card__head-actions">
+            <button id="toTopTickers" class="btn btn--sm btn--outline" type="button">Tickers ↑</button>
+            <span class="card__icon" aria-hidden="true">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <rect width="18" height="18" x="3" y="3" rx="2"></rect>
+                <path d="M3 9h18"></path>
+                <path d="M3 15h18"></path>
+                <path d="M12 3v18"></path>
+              </svg>
+            </span>
+          </div>
+        </div>
+
+        <div class="table-scroll" role="region" aria-label="Monthly summary" tabindex="0">
+          <table id="monthlyTable" class="table">
+            <caption class="visually-hidden">Monthly realised profit and loss summary</caption>
+            <thead>
+              <tr>
+                <th scope="col">Month</th>
+                <th scope="col">Net P&amp;L</th>
+                <th scope="col">Trades</th>
+                <th scope="col">Avg / trade</th>
+              </tr>
+            </thead>
+            <tbody id="monthlyBody"></tbody>
+          </table>
+        </div>
+        <p class="table-placeholder">No months yet — the table fills in as soon as a CSV loads.</p>
+      </section>
+
+      <section class="card table-card" id="drillCard" aria-labelledby="drillTitle">
         <div class="card__head card__head--lead">
           <span class="card__icon" aria-hidden="true">
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -456,8 +469,11 @@
           </span>
           <div class="card__head-copy">
             <h2 class="card__title" id="drillTitle">Instrument drill-down</h2>
-            <p class="card__sub">Pick a month in the summary to see the instruments behind it.</p>
+            <p class="card__sub">Pick a month chip — or a row in the Monthly summary — to see the instruments behind it.</p>
           </div>
+          <!-- month filter (moved out of the Monthly summary): a pick also snaps
+               the year filter to that month's year, see onChipClick in app.js -->
+          <div id="monthChips" class="chips" role="group" aria-label="Filter by month"></div>
         </div>
 
         <div class="table-scroll" role="region" aria-label="Instrument drill-down" tabindex="0">
@@ -550,9 +566,11 @@
 
 </main>
 
+<!-- Thin sticky strip: attribution + the live FX badge only (styles.css pins it to
+     the viewport bottom, below the dialogs). Hover/focus #fxBadge reveals #fxDetail,
+     which opens upward above the footer line. -->
 <footer class="site-footer">
   <div class="container site-footer__inner">
-    <p class="site-footer__note">Your statement is parsed in this browser. The FX rate auto-refreshes on each CSV load (fixed URL, currency codes only, no portfolio data; manual override disables network).</p>
     <p class="site-footer__meta">
       <a class="site-footer__link" href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer">Rates By Exchange Rate API</a>
       <span class="site-footer__sep" aria-hidden="true">·</span>
@@ -611,6 +629,50 @@
     <button id="tickerApply" class="btn btn--primary" type="button">Apply</button>
     <button id="tickerClear" class="btn btn--outline" type="button">Clear</button>
     <button id="tickerClose" class="btn btn--outline" type="button">Close</button>
+  </footer>
+</dialog>
+
+<!-- CSV export help (opened by #csvHelpBtn beside Load CSV). Same native <dialog>
+     contract as #tickerModal: app.js drives showModal()/close(), Esc + backdrop are
+     native, and the open-attribute fallback covers engines without showModal. The
+     steps mirror README §1. -->
+<dialog id="csvHelpModal" class="modal modal--help" aria-labelledby="csvHelpTitle">
+  <h2 class="modal__title" id="csvHelpTitle">Get the CSV from IBKR</h2>
+  <ol class="help-steps">
+    <li>
+      <strong>Flex Query (preferred).</strong> Log in to Client Portal →
+      <strong>Performance &amp; Reports</strong> → <strong>Flex Queries</strong> → open
+      (or create) the <strong>Activity Flex Query</strong> named
+      <code>Monthly_Realised_PnL</code>.
+    </li>
+    <li>
+      Include these sections: <strong>Trades</strong>, <strong>Cash</strong>,
+      <strong>InterestAccruals</strong>, <strong>CashReport</strong> and
+      <strong>Realized Base</strong> (the <em>Realized/Unrealized P&amp;L</em> section
+      with its currency set to <em>Base</em>).
+    </li>
+    <li>
+      Set <strong>Format: CSV</strong> and <strong>Period: Last Month</strong>, then
+      <strong>Run</strong> / <strong>Download</strong> the file and save it in this
+      dashboard's <code>data/</code> folder.
+    </li>
+    <li>
+      <strong>Fallback — Activity Statement.</strong> Reports → <strong>Statements</strong> →
+      <strong>Activity</strong>, pick the monthly period and download the CSV; the parser
+      understands both layouts.
+    </li>
+  </ol>
+  <p class="help-note">
+    <strong>Freshness.</strong> IBKR can take up to 5 business days after month-end to finalise
+    the previous month, and Flex Queries cannot include the current trading day — re-run once
+    the month has closed.
+  </p>
+  <p class="help-note">
+    <strong>Privacy.</strong> The file is parsed in this browser only: nothing is uploaded and
+    nothing leaves your machine.
+  </p>
+  <footer class="modal__actions">
+    <button id="csvHelpClose" class="btn btn--outline" type="button">Close</button>
   </footer>
 </dialog>
 

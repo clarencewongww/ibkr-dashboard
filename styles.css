@@ -794,6 +794,16 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 .chart .dot { fill: var(--card); stroke: var(--teal-dark); stroke-width: 2; }
 .chart .tick,
 .chart .label { fill: var(--muted); font-size: 11px; font-family: var(--font); }
+
+/* dual axes (renderChart / renderInterest): the left axis drives the bars and is
+   green, the right axis tracks the running line and is teal-dark — labels and
+   gridlines share each side's colour. app.js emits currentColor as a fallback,
+   but these class rules win over the presentation attributes. */
+.chart .label--left { fill: var(--green); }
+.chart .label--right { fill: var(--teal-dark); }
+.chart .grid--left { stroke: var(--green); }
+.chart .grid--right { stroke: var(--teal-dark); }
+
 .chart [data-month] { cursor: pointer; }
 .chart rect[tabindex] { cursor: pointer; }
 
@@ -827,7 +837,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   flex: none;
 }
 
-.legend__dot--bar { background: var(--teal); }
+.legend__dot--bar { background: var(--green); }
 .legend__dot--line { background: var(--teal-dark); border-radius: 999px; }
 .legend__dot--opt { background: var(--green); }
 .legend__dot--stock { background: var(--indigo-bright); }
@@ -869,17 +879,12 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   color: var(--teal-dark);
 }
 
-/* month filter chips */
-.filter-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px 20px;
-  margin-bottom: 16px;
+/* month filter chips — they live in the drill-down card header (moved out of the
+   Monthly summary), where they take a full row under the title. */
+#monthChips {
+  flex: 1 0 100%;
+  margin: 2px 0 0;
 }
-
-.filter-bar .chips { margin-bottom: 0; }
 
 /* --------------------------------------------------------------- tables --- */
 .table-card { min-width: 0; }
@@ -1097,7 +1102,13 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 }
 
 /* ---------------------------------------------------------------- footer --- */
+/* Thin sticky strip pinned to the viewport bottom. z-index 20 keeps it above the
+   page cards but below the modal fallback (body::before 100 / dialog 101); native
+   <dialog> lives in the top layer, so it always covers the footer. */
 .site-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
   border-top: 1px solid var(--border);
   background: var(--card);
 }
@@ -1106,14 +1117,12 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 6px 24px;
-  padding-block: 18px 28px;
+  justify-content: flex-end;
+  gap: 4px 24px;
+  padding-block: 9px;
   font-size: 12.5px;
   color: var(--muted);
 }
-
-.site-footer__note { max-width: 68ch; }
 
 .site-footer__meta {
   display: inline-flex;
@@ -1261,6 +1270,31 @@ body.modal-fallback-open::before {
   margin-top: 16px;
 }
 
+/* CSV export help (#csvHelpModal) — numbered steps + note paragraphs */
+.modal--help { width: min(540px, calc(100vw - 32px)); }
+
+.help-steps {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding-left: 20px;
+  font-size: 13.5px;
+}
+
+.help-steps code {
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.help-note {
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
 /* scroll lock behind the sheet; harmless in engines without :has() because
    .modal already caps its own height */
 body:has(dialog[open]) { overflow: hidden; }
@@ -1378,13 +1412,42 @@ body:has(dialog[open]) { overflow: hidden; }
   cursor: pointer;
 }
 
+/* #toTopTickers feedback: a short ring around #tickerBtn. app.js adds .glow and
+   removes it after 2.5s; the global reduced-motion rule flattens the pulse but
+   the static ring still marks the button. */
+.glow {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 4px var(--teal-tint);
+  animation: ticker-glow 2.5s ease-out;
+}
+
+@keyframes ticker-glow {
+  0%, 100% { box-shadow: 0 0 0 4px var(--teal-tint); }
+  50% { box-shadow: 0 0 0 8px rgba(79, 209, 197, .30); }
+}
+
 /* ---------------------------------------------------------- responsive --- */
 @media (min-width: 960px) {
   .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 @media (min-width: 1024px) {
-  .split { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); align-items: start; }
+  /* Explicit two-column layout: DOM order (chart → breakdown → summary → drill)
+     is the mobile single-column order; on desktop the two graph cards sit in the
+     wide left column and the summary + drill cards in the narrower right one. */
+  .split {
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    grid-template-areas:
+      "chart summary"
+      "breakdown drill";
+    align-items: start;
+  }
+  #chartCard { grid-area: chart; }
+  #breakdownCard { grid-area: breakdown; }
+  #summaryCard { grid-area: summary; }
+  #drillCard { grid-area: drill; }
+  /* the breakdown now owns the wide column, so drop its centred 760px cap */
+  #breakdownCard .chart-wrap { max-width: none; }
   .hero__inner { flex-wrap: nowrap; }
 }
 

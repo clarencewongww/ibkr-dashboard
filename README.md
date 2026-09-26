@@ -20,6 +20,7 @@ drill-down. Everything runs in the browser: your file never leaves your machine.
    - **Realized/Unrealized P&L** → set the currency to **Base** (not per-currency, not "Base Summary")
 4. Set **Format: CSV**, **Period: Last Month**, then **Run** / **Download** the file.
 5. Save the `.csv` anywhere on your machine — this app only reads it locally.
+   (The same steps are in the dashboard: click the round **i** beside **Load CSV**.)
 
 > **Freshness limits, by design:**
 > - IBKR typically needs up to **5 business days** after month-end before the full previous month is final.
@@ -84,9 +85,17 @@ Multiple files are concatenated; do not load overlapping periods twice or totals
 ### Monthly chart
 
 The **Monthly realised P&L** card is dual-axis: the green/red bars scale to the monthly totals
-(**left** axis) and the teal running-total line — dots carry a `Running $…` tip — scales to the
-cumulative series (**right** axis). A month far larger than the rest can no longer flatten the
-other series. The legend marks the sides: **Net P&L (left)** and **Running total (right)**.
+(**left** axis, green labels) and the teal-dark running-total line scales to the cumulative series
+(**right** axis, teal-dark labels) — a month far larger than the rest can no longer flatten the
+other series. Hover a bar for `May 2026 · Net $X · Running $Y`; the dots carry `May 2026 · Running
+$Y`. The legend marks the sides and matches the series: **Net P&L (left)** green, **Running total
+(right)** teal-dark.
+
+On desktop the four Overview cards form two columns — **chart + Income breakdown** on the left
+(1.55fr) and **Monthly summary + drill-down** on the right (1fr); below 1024px they stack in that
+same order, graphs first. The **month chips** live in the drill-down card header: the summary
+always lists every visible month, while a chip (or a summary row) picks the drill-down month and
+snaps the year filter to that month's year.
 
 ### Breakdown
 
@@ -121,9 +130,10 @@ switch views; the Interest tab renders four KPIs, a bar chart and a per-month ta
 | **Best month** | Highest monthly interest; the winning month's name sits under the value. |
 | **Share of income** | **Total interest ÷ net P&L** — the label says "income", but the maths divides by the net P&L summed across the visible months, not by the income segment, and reads `0.0%` when net is zero. |
 
-- **Chart.** Bars are green when the month's interest is positive, red when negative; a teal line
-  with dots tracks the cumulative interest across the visible months. Hover or focus a bar or dot
-  for the unified monthly tip (`Net … · Interest …`).
+- **Chart.** Dual-axis like the monthly chart: bars are green when the month's interest is positive,
+  red when negative, and scale to the left axis; a teal-dark line with dots tracks the cumulative
+  interest on the right axis. Hover or focus a bar for `May 2026 · Interest $X · Running $Y`; the
+  dots read `Interest running $Y`.
 - **Table.** One row per visible month: month, interest, trade count, and **share of net** — that
   month's interest ÷ that month's net P&L (same divisor as the KPI, month by month). The static
   header row labels the four columns; hover **Trades** for *trade executions that month, not
@@ -160,8 +170,9 @@ drill-down. Exclusions are set from the **Tickers** modal only:
 
 ### Include
 
-**Include tickers** is the allow-list mirror of Exclude, using the same case-insensitive root-symbol
-matching and persisted in `localStorage` under **`ibkr-include-v1`**:
+The toolbar's **Include/exclude tickers** group opens the picker; **Include** is the allow-list
+mirror of Exclude, using the same case-insensitive root-symbol matching and persisted in
+`localStorage` under **`ibkr-include-v1`**:
 
 - **Allow-list first.** While the include list is non-empty, only listed roots aggregate into the
   KPIs, both charts, the month table and the drill-down; an empty list includes everything.
@@ -188,7 +199,7 @@ matching and persisted in `localStorage` under **`ibkr-include-v1`**:
 - **Chips.** Every included root appears as a pressed chip next to the button, labelled with its
   scope while scoped (`AMD (Options only)`); click a chip to drop that ticker from the allow-list.
 - **Jump back.** The Monthly summary header carries a **Tickers ↑** shortcut (`#toTopTickers`) that
-  scrolls the toolbar into view and focuses the modal button.
+  scrolls the Tickers button into view, focuses it and flashes a short glow around it.
 - **Ticker-less cash rows** (e.g. broker interest) have no root symbol, so **include never filters
   them** — interest and other cash buckets stay in the totals while an allow-list is active.
 - As with Exclude, hiding is display-only: **overlapping concatenated files still double-count**.
@@ -215,8 +226,9 @@ memory; nothing is rewritten.
   **Auto** clears the override and returns to the automatic chain.
 - **Offline.** With no override, no cache and no reachable provider, the app falls back to a baked
   approximation of **1.423** USD→AUD (badge reads `FX: approximate`).
-- **Badge.** The footer always shows the applied source, the provider's rate date and the exact
-  rate (`FX: <source> · <date> · 1 USD=<rate> AUD`).
+- **Badge.** The thin sticky footer always shows the applied source, the provider's rate date and
+  the exact rate (`FX: <source> · <date> · 1 USD=<rate> AUD`); hover or focus it for the full
+  provenance tooltip, which opens upward.
 - **Attribution.** The footer keeps the required rates attribution link to **Exchange Rate API**;
   no statement data is requested by or sent to it.
 
@@ -246,7 +258,7 @@ memory; nothing is rewritten.
 
 | Path | Role |
 | --- | --- |
-| `index.html` | Markup contract: header, month/year chips, chart cards, table, `#postedToggle`, `#tickerBtn` / `#tickerSearchClear` / `#tickerCount` / `#filterNote` / `#toTopTickers`, `#assetToggle` asset radios, `#fxInput` / `#fxReset` / `#fxBadge`, legend income popover `#incomeInfo` / `#incomeHelp`, `#clearBtn`, file input. |
+| `index.html` | Markup contract: header, year select, month chips (drill-down card header), chart cards, tables, `#postedToggle`, `#tickerBtn` / `#tickerSearchClear` / `#tickerCount` / `#filterNote` / `#toTopTickers`, `#assetToggle` asset radios, `#fxInput` / `#fxReset` / `#fxBadge`, legend income popover `#incomeInfo` / `#incomeHelp`, `#clearBtn`, file input, CSV help `#csvHelpBtn` / `#csvHelpModal`. |
 | `styles.css` | All styling and design tokens (CSS custom properties in `:root`); no external assets. |
 | `app.js` | CSV parser (Flex + Activity Statement), month aggregation, root-symbol include/exclude filter with per-kind scopes, session-only asset filter, USD/AUD rate chain, rendering. Exposes `window.IBKR` for debugging. |
 | `Start-Dashboard.sh` | Kill-then-start launcher: frees port 8000, serves this folder on **127.0.0.1** and opens the page. |

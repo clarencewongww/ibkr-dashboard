@@ -12,10 +12,10 @@
  * Every DOM lookup is optional, so the script survives if the shell HTML is missing.
  *
  * DOM contract (see index.html): fileInput dropZone yearSelect monthChips kpiNet
- * kpiMonth kpiBest kpiAvg chartSvg chartTip breakdownSvg breakdownTip monthlyBody
+ * kpiMonth kpiAvg kpiBest chartSvg chartTip breakdownSvg breakdownTip monthlyBody
  * drillBody drillTitle emptyState errorBox clearBtn postedToggle fileLabel,
  * includeChips tickerBtn toTopTickers filterNote tickerSearchClear fxBadge fxDetail
- * fxInput fxReset, plus the optional
+ * fxInput fxReset csvHelpBtn csvHelpModal csvHelpClose, plus the optional
  * input[name="currencyToggle"] USD/AUD switch, the interest card (interestSvg
  * interestTip kpiIntTotal kpiIntAvgDay kpiIntBest kpiIntShare interestBody),
  * incomeInfo incomeHelp (the breakdown legend .info/.info-tip pair),
@@ -893,10 +893,11 @@ const IBKR = (function () {
   }
 
   /**
-   * Unified month tip shared by #chartSvg, #breakdownSvg and #interestSvg:
+   * Full month tip — the income-breakdown segments' data-tip:
    *   "May 2026 · Net $14,069.38 · Options $… (37%) · Stock $… (30%) · Interest $… (7%) · Div $… (2%)"
    * Withhold/Fees appear only when non-zero; each percentage is the line's share of the month's
    * net total and is omitted when that total is 0. `running` appends the chart cumulative.
+   * The two bar charts (monthly, interest) use the short barTipText instead.
    */
   function monthTipText(k, b, running) {
     const m = b || {};
@@ -911,6 +912,28 @@ const IBKR = (function () {
     if (Number(m.fees)) text += ` · Fees ${fmtMoney(m.fees)}${pct(m.fees)}`;
     if (running != null) text += ` · Running ${fmtMoney(running)}`;
     return text;
+  }
+
+  /**
+   * Short bar tip shared by the two bar charts (the breakdown keeps monthTipText's
+   * full split):
+   *   "May 2026 · Net $14,069.38 · Running $52,301.10"
+   *   "May 2026 · Interest $812.44 · Running $4,201.19"
+   * `head` labels the bar's own series, `value` and `running` are raw USD and
+   * fmtMoney converts them to the active display currency (AUD included).
+   */
+  function barTipText(k, head, value, running) {
+    let text = `${monthLabel(k)} · ${head} ${fmtMoney(value)}`;
+    if (running != null) text += ` · Running ${fmtMoney(running)}`;
+    return text;
+  }
+
+  /** 10%-padded [hi, lo] domain over a series — the shared dual-axis scale. */
+  function paddedDomain(values) {
+    const hi = Math.max(0, ...values);
+    const lo = Math.min(0, ...values);
+    const pad = (hi - lo) * 0.1 || 1;
+    return [hi + pad, lo - pad];
   }
 
   // chart hooks: .bar / .bar--neg / .line / .dot / .tick / .label are styled by styles.css
@@ -1000,14 +1023,8 @@ const IBKR = (function () {
     for (const t of totals) { run += t; cumulative.push(run); }
     // Dual axes: bars scale to the monthly totals (left), the running line to the cumulative
     // series (right), so neither series can flatten the other.
-    const domain = values => {
-      let hi = Math.max(0, ...values);
-      let lo = Math.min(0, ...values);
-      const pad = (hi - lo) * 0.1 || 1;
-      return [hi + pad, lo - pad];
-    };
-    const [hiL, loL] = domain(totals);
-    const [hiR, loR] = domain(cumulative);
+    const [hiL, loL] = paddedDomain(totals);
+    const [hiR, loR] = paddedDomain(cumulative);
     const scale = (hi, lo) => v => pt + ih * (hi - v) / (hi - lo);
     const yL = scale(hiL, loL);
     const yR = scale(hiR, loR);
@@ -1017,27 +1034,30 @@ const IBKR = (function () {
     const zeroL = yL(0);
     const multiYear = state.year === 'all' && new Set(keys.map(k => k.slice(0, 4))).size > 1;
     let out = '';
-    // Grid + left labels follow the bar domain; right labels track the running-total domain.
+    // Grid + labels track each axis: left (bars) in green, right (running total) in
+    // teal-dark. styles.css colours .grid--left/right and .label--left/right.
     for (const v of [hiL, 0, loL]) {
       const yy = yL(v).toFixed(1);
-      out += `<line class="grid" x1="${pl}" y1="${yy}" x2="${W - pr}" y2="${yy}" stroke="currentColor" stroke-opacity="0.5" />`;
-      out += `<text class="label" x="${pl - 8}" y="${(+yy + 3).toFixed(1)}" text-anchor="end">${fmtCompact(v)}</text>`;
+      out += `<line class="grid grid--left" x1="${pl}" y1="${yy}" x2="${W - pr}" y2="${yy}" stroke="currentColor" stroke-opacity="0.5" />`;
+      out += `<text class="label label--left" x="${pl - 8}" y="${(+yy + 3).toFixed(1)}" text-anchor="end">${fmtCompact(v)}</text>`;
     }
     for (const v of [hiR, 0, loR]) {
-      out += `<text class="label label--right" x="${W - pr + 8}" y="${(yR(v) + 3).toFixed(1)}" text-anchor="start">${fmtCompact(v)}</text>`;
+      const yy = yR(v).toFixed(1);
+      out += `<line class="grid grid--right" x1="${pl}" y1="${yy}" x2="${W - pr}" y2="${yy}" stroke="currentColor" stroke-opacity="0.5" />`;
+      out += `<text class="label label--right" x="${W - pr + 8}" y="${(+yy + 3).toFixed(1)}" text-anchor="start">${fmtCompact(v)}</text>`;
     }
     keys.forEach((k, i) => {
       const total = totals[i];
       const top = total >= 0 ? yL(total) : zeroL;
       const height = Math.max(1, Math.abs(yL(total) - zeroL));
-      const tip = monthTipText(k, months[k], cumulative[i]);
+      const tip = barTipText(k, 'Net', total, cumulative[i]);
       if (state.month !== 'all' && k === `${state.year}-${state.month}`) {
         out += `<rect x="${(pl + band * i + 2).toFixed(1)}" y="${pt}" width="${(band - 4).toFixed(1)}" height="${ih}" rx="4" fill="currentColor" fill-opacity="0.05" />`;
       }
       out += `<rect class="bar${total < 0 ? ' bar--neg' : ''}" x="${(cx(i) - barW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${barW}" height="${height.toFixed(1)}" rx="2" fill="${total >= 0 ? '#48BB78' : '#F56565'}" tabindex="0" data-tip="${esc(tip)}"><title>${esc(tip)}</title></rect>`;
       out += `<text class="label" x="${cx(i).toFixed(1)}" y="${H - 16}" text-anchor="middle">${MONTH_NAMES[+k.slice(5, 7) - 1] || k}${multiYear ? " '" + k.slice(2, 4) : ''}</text>`;
     });
-    out += `<polyline class="line" points="${keys.map((k, i) => `${cx(i).toFixed(1)},${yR(cumulative[i]).toFixed(1)}`).join(' ')}" fill="none" stroke="#4FD1C5" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`;
+    out += `<polyline class="line" points="${keys.map((k, i) => `${cx(i).toFixed(1)},${yR(cumulative[i]).toFixed(1)}`).join(' ')}" fill="none" stroke="#319795" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`;
     for (let i = 0; i < keys.length; i++) {
       const runTip = `${monthLabel(keys[i])} · Running ${fmtMoney(cumulative[i])}`;
       out += `<circle class="dot" cx="${cx(i).toFixed(1)}" cy="${yR(cumulative[i]).toFixed(1)}" r="2.5" tabindex="0" data-tip="${esc(runTip)}"><title>${esc(runTip)}</title></circle>`;
@@ -1159,10 +1179,11 @@ const IBKR = (function () {
   }
 
   /**
-   * Interest analysis card — KPIs (total, avg/day, best month, share of net), a bar chart with
-   * the cumulative teal running line (#interestSvg/#interestTip, same 720x300 geometry as
-   * #chartSvg) and a per-month table (Month | Interest | Trades | Share of net). Every lookup
-   * is null-safe: shells without the card skip it entirely.
+   * Interest analysis card — KPIs (total, avg/day, best month, share of net), a dual-axis bar
+   * chart whose cumulative teal-dark running line scales to its own right-hand domain
+   * (#interestSvg/#interestTip, same 720x300 geometry as #chartSvg) and a per-month table
+   * (Month | Interest | Trades | Share of net). Every lookup is null-safe: shells without the
+   * card skip it entirely.
    */
   function renderInterest(months) {
     const svg = byId('interestSvg');
@@ -1200,7 +1221,7 @@ const IBKR = (function () {
     }
 
     if (!svg) return;
-    const W = 720, H = 300, pl = 72, pr = 20, pt = 28, pb = 46;
+    const W = 720, H = 300, pl = 72, pr = 64, pt = 28, pb = 46;
     const iw = W - pl - pr, ih = H - pt - pb;
     if (!keys.length) {
       hideTipFor(byId('interestTip'));
@@ -1212,27 +1233,36 @@ const IBKR = (function () {
     const cumulative = [];
     let run = 0;
     for (const v of values) { run += v; cumulative.push(run); }
-    let hi = Math.max(0, ...values, ...cumulative);
-    let lo = Math.min(0, ...values, ...cumulative);
-    const pad = (hi - lo) * 0.1 || 1;
-    hi += pad; lo -= pad;
-    const y = v => pt + ih * (hi - v) / (hi - lo);
+    // Dual axes, same maths as renderChart: bars scale to the monthly interest (left),
+    // the running line to the cumulative series (right), so a large cumulative total can
+    // no longer squash the bars.
+    const [hiL, loL] = paddedDomain(values);
+    const [hiR, loR] = paddedDomain(cumulative);
+    const scale = (hi, lo) => v => pt + ih * (hi - v) / (hi - lo);
+    const yL = scale(hiL, loL);
+    const yR = scale(hiR, loR);
     const band = iw / keys.length;
     const cx = i => pl + band * (i + 0.5);
     const barW = Math.max(6, Math.min(12, band - 6));
-    const zero = y(0);
+    const zeroL = yL(0);
     const multiYear = state.year === 'all' && new Set(keys.map(k => k.slice(0, 4))).size > 1;
     let out = '';
-    for (const v of [hi, 0, lo]) {
-      const yy = y(v).toFixed(1);
-      out += `<line class="grid" x1="${pl}" y1="${yy}" x2="${W - pr}" y2="${yy}" stroke="currentColor" stroke-opacity="0.5" />`;
-      out += `<text class="label" x="${pl - 8}" y="${(+yy + 3).toFixed(1)}" text-anchor="end">${fmtCompact(v)}</text>`;
+    // left grid/labels follow the interest bars (green), right follow the running line
+    for (const v of [hiL, 0, loL]) {
+      const yy = yL(v).toFixed(1);
+      out += `<line class="grid grid--left" x1="${pl}" y1="${yy}" x2="${W - pr}" y2="${yy}" stroke="currentColor" stroke-opacity="0.5" />`;
+      out += `<text class="label label--left" x="${pl - 8}" y="${(+yy + 3).toFixed(1)}" text-anchor="end">${fmtCompact(v)}</text>`;
+    }
+    for (const v of [hiR, 0, loR]) {
+      const yy = yR(v).toFixed(1);
+      out += `<line class="grid grid--right" x1="${pl}" y1="${yy}" x2="${W - pr}" y2="${yy}" stroke="currentColor" stroke-opacity="0.5" />`;
+      out += `<text class="label label--right" x="${W - pr + 8}" y="${(+yy + 3).toFixed(1)}" text-anchor="start">${fmtCompact(v)}</text>`;
     }
     keys.forEach((k, i) => {
       const amount = values[i];
-      const top = amount >= 0 ? y(amount) : zero;
-      const height = Math.max(1, Math.abs(y(amount) - zero));
-      const tip = monthTipText(k, months[k]);
+      const top = amount >= 0 ? yL(amount) : zeroL;
+      const height = Math.max(1, Math.abs(yL(amount) - zeroL));
+      const tip = barTipText(k, 'Interest', amount, cumulative[i]);
       if (state.month !== 'all' && k === `${state.year}-${state.month}`) {
         out += `<rect x="${(pl + band * i + 2).toFixed(1)}" y="${pt}" width="${(band - 4).toFixed(1)}" height="${ih}" rx="4" fill="currentColor" fill-opacity="0.05" />`;
       }
@@ -1240,16 +1270,19 @@ const IBKR = (function () {
       out += `<rect class="bar${amount < 0 ? ' bar--neg' : ''}" x="${(cx(i) - barW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${barW}" height="${height.toFixed(1)}" rx="2" fill="${amount >= 0 ? '#48BB78' : '#F56565'}" tabindex="0" data-tip="${esc(tip)}"><title>${esc(tip)}</title></rect>`;
       out += `<text class="label" x="${cx(i).toFixed(1)}" y="${H - 16}" text-anchor="middle">${MONTH_NAMES[+k.slice(5, 7) - 1] || k}${multiYear ? " '" + k.slice(2, 4) : ''}</text>`;
     });
-    out += `<polyline class="line" points="${keys.map((k, i) => `${cx(i).toFixed(1)},${y(cumulative[i]).toFixed(1)}`).join(' ')}" fill="none" stroke="#4FD1C5" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`;
+    out += `<polyline class="line" points="${keys.map((k, i) => `${cx(i).toFixed(1)},${yR(cumulative[i]).toFixed(1)}`).join(' ')}" fill="none" stroke="#319795" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`;
     for (let i = 0; i < keys.length; i++) {
       const runTip = `${monthLabel(keys[i])} · Interest running ${fmtMoney(cumulative[i])}`;
-      out += `<circle class="dot" cx="${cx(i).toFixed(1)}" cy="${y(cumulative[i]).toFixed(1)}" r="2.5" tabindex="0" data-tip="${esc(runTip)}"><title>${esc(runTip)}</title></circle>`;
+      out += `<circle class="dot" cx="${cx(i).toFixed(1)}" cy="${yR(cumulative[i]).toFixed(1)}" r="2.5" tabindex="0" data-tip="${esc(runTip)}"><title>${esc(runTip)}</title></circle>`;
     }
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
     svg.innerHTML = out;
   }
 
   function renderTables(months) {
+    // The summary always lists every visible month — the year filter only. state.month
+    // is deliberately ignored here (the drill-down below is the month-filtered view),
+    // so picking a chip never shrinks the table it was picked from.
     const keys = visibleKeys();
     const summary = byId('monthlyBody');
     if (summary) {
@@ -1737,15 +1770,31 @@ const IBKR = (function () {
     filterTickerList(); // the rebuilt rows ignore the now-empty query; this refreshes the count
   }
 
-  /** #toTopTickers (summary header) — scroll back to the toolbar and focus #tickerBtn. */
+  let toTopGlowTimer = null;
+  /**
+   * #toTopTickers (summary header) — scroll #tickerBtn into view, focus it and flash
+   * .glow for 2.5s. The pulse itself comes from styles.css; the class is also a plain
+   * ring so reduced-motion users still see the target (the global rule flattens the
+   * animation, JS still removes the class on the same timer).
+   */
   function onToTopTickers() {
-    const toolbar = typeof document !== 'undefined' && document.querySelector ? document.querySelector('.toolbar') : null;
-    if (toolbar && typeof toolbar.scrollIntoView === 'function') {
-      const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-      toolbar.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
-    }
     const btn = byId('tickerBtn');
-    if (btn && typeof btn.focus === 'function') btn.focus({ preventScroll: true });
+    if (!btn) return;
+    const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (typeof btn.scrollIntoView === 'function') {
+      btn.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+    }
+    if (typeof btn.focus === 'function') btn.focus({ preventScroll: true });
+    if (btn.classList) {
+      btn.classList.remove('glow');
+      if (typeof btn.offsetWidth === 'number') void btn.offsetWidth; // restart on repeat clicks
+      btn.classList.add('glow');
+      if (toTopGlowTimer) clearTimeout(toTopGlowTimer);
+      toTopGlowTimer = setTimeout(function () {
+        toTopGlowTimer = null;
+        btn.classList.remove('glow');
+      }, 2500);
+    }
   }
 
   function restoreTickerFocus() {
@@ -1804,19 +1853,68 @@ const IBKR = (function () {
     if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) return;
     dialog.close(); // click landed on ::backdrop
   }
-  /**
-   * Keyboard fallback for shells that opened the picker via the open attribute:
-   * Esc closes it and Tab wraps between its first and last control. Native
-   * dialogs handle both themselves, so this stays idle whenever showModal exists.
-   */
-  function onDocumentKeydown(e) {
-    const key = e.key;
-    if (key === 'Escape') {
-      if (tickerFallbackOpen()) closeTickerList();
-      return;
+
+  // ------------------------------------------------ CSV export help (#csvHelpModal)
+
+  let csvHelpReturnFocus = null;
+
+  /** Open #csvHelpModal — same native/fallback contract as the ticker picker. */
+  function openCsvHelp() {
+    const dialog = byId('csvHelpModal');
+    if (!dialog) return;
+    if (typeof document !== 'undefined' && document.activeElement) csvHelpReturnFocus = document.activeElement;
+    if (typeof dialog.showModal === 'function') {
+      if (!dialog.open) dialog.showModal();
+    } else {
+      // engines without showModal: the open attribute + .modal--fallback CSS stand in
+      dialog.setAttribute('open', '');
+      dialog.classList.add('modal--fallback');
+      if (typeof document !== 'undefined' && document.body) document.body.classList.add('modal-fallback-open');
     }
-    if (key !== 'Tab' || !tickerFallbackOpen() || typeof document === 'undefined') return;
-    const dialog = pickById(TICKER_IDS.dialog);
+    const close = byId('csvHelpClose');
+    if (close && typeof close.focus === 'function') close.focus();
+  }
+  /** True while #csvHelpModal is open through the open-attribute fallback. */
+  function csvHelpFallbackOpen() {
+    const dialog = byId('csvHelpModal');
+    return !!(dialog && typeof dialog.showModal !== 'function' && dialog.hasAttribute('open'));
+  }
+  /** Close the help dialog; native close() fires the close event, the fallback unwinds by hand. */
+  function closeCsvHelp() {
+    const dialog = byId('csvHelpModal');
+    const native = !!dialog && typeof dialog.showModal === 'function' && typeof dialog.close === 'function';
+    if (native && dialog.open) { dialog.close(); return; }
+    if (dialog) {
+      dialog.removeAttribute('open');
+      dialog.classList.remove('modal--fallback');
+      if (typeof document !== 'undefined' && document.body) document.body.classList.remove('modal-fallback-open');
+    }
+    restoreCsvHelpFocus(); // without a real <dialog> the close event never fires
+  }
+  function onCsvHelpDialogClose() { restoreCsvHelpFocus(); }
+  /** <dialog closedby="any"> handles Esc/backdrop natively — keep a fallback for older shells. */
+  function onCsvHelpDialogClick(e) {
+    const dialog = e.currentTarget;
+    if (!dialog || e.target !== dialog || typeof dialog.close !== 'function' || !dialog.getBoundingClientRect) return;
+    const r = dialog.getBoundingClientRect();
+    if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) return;
+    dialog.close(); // click landed on ::backdrop
+  }
+  function restoreCsvHelpFocus() {
+    const target = csvHelpReturnFocus || byId('csvHelpBtn');
+    csvHelpReturnFocus = null;
+    if (target && typeof target.focus === 'function') {
+      try { target.focus(); } catch (err) { /* element detached */ }
+    }
+  }
+
+  /**
+   * Tab trap for shells that opened a dialog via the open attribute: wraps between
+   * its first and last control. Native dialogs trap on their own, so this stays
+   * idle whenever showModal exists.
+   */
+  function trapFallbackTab(dialog, e) {
+    if (typeof document === 'undefined') return;
     const focusables = dialog && dialog.querySelectorAll
       ? dialog.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')
       : [];
@@ -1825,6 +1923,22 @@ const IBKR = (function () {
     const inside = !!(active && dialog.contains && dialog.contains(active));
     if (e.shiftKey && (active === first || !inside)) { e.preventDefault(); if (last.focus) last.focus(); }
     else if (!e.shiftKey && (active === last || !inside)) { e.preventDefault(); if (first.focus) first.focus(); }
+  }
+  /**
+   * Keyboard fallback for shells that opened a dialog via the open attribute:
+   * Esc closes it and Tab wraps between its controls. Native dialogs handle both
+   * themselves, so this stays idle whenever showModal exists.
+   */
+  function onDocumentKeydown(e) {
+    const key = e.key;
+    if (key === 'Escape') {
+      if (tickerFallbackOpen()) closeTickerList();
+      if (csvHelpFallbackOpen()) closeCsvHelp();
+      return;
+    }
+    if (key !== 'Tab') return;
+    if (tickerFallbackOpen()) trapFallbackTab(pickById(TICKER_IDS.dialog), e);
+    else if (csvHelpFallbackOpen()) trapFallbackTab(byId('csvHelpModal'), e);
   }
 
   /** Tab key for a button/panel: data-tab, aria-controls="tabX" or id="tabBtnX"/"tabX". */
@@ -1911,8 +2025,12 @@ const IBKR = (function () {
     if (tabBtn) { showTab(tabKeyOf(tabBtn), false); return; }
     const openerSelector = '[data-open-tickers], ' + TICKER_IDS.openers.map(id => '#' + id).join(', ');
     if (target.closest(openerSelector)) { openTickerList(); return; }
-    // fallback dialog: a click anywhere outside the open picker dismisses it
+    // help opener: handled here (like the ticker openers) so the fallback-dialog
+    // dismissal below never sees the opening click as an outside click
+    if (target.closest('#csvHelpBtn')) { openCsvHelp(); return; }
+    // fallback dialogs: a click anywhere outside an open one dismisses it
     if (tickerFallbackOpen() && !target.closest('.modal--fallback')) closeTickerList();
+    if (csvHelpFallbackOpen() && !target.closest('.modal--fallback')) closeCsvHelp();
   }
 
   // ------------------------------------------------------------ listeners
@@ -2060,6 +2178,14 @@ const IBKR = (function () {
       listen(tickerDialog, 'close', onTickerDialogClose);
       listen(tickerDialog, 'click', onTickerDialogClick);
     }
+    // CSV export help — same dialog wiring as the ticker picker (#csvHelpBtn's
+    // opener is delegated in onDocumentClick, next to the ticker openers)
+    listen(byId('csvHelpClose'), 'click', closeCsvHelp);
+    const csvHelpDialog = byId('csvHelpModal');
+    if (csvHelpDialog) {
+      listen(csvHelpDialog, 'close', onCsvHelpDialogClose);
+      listen(csvHelpDialog, 'click', onCsvHelpDialogClick);
+    }
     if (typeof document !== 'undefined') {
       listen(document, 'click', onDocumentClick);
       listen(document, 'keydown', onDocumentKeydown);
@@ -2098,8 +2224,9 @@ const IBKR = (function () {
     getExclude, setExclude, getInclude, setInclude,
     getIncludeScope, setIncludeScope, getExcludeScope, setExcludeScope,
     getAssetFilter, setAssetFilter,
-    monthTipText, renderInterest, rankedRoots,
+    monthTipText, barTipText, renderInterest, rankedRoots,
     renderTickerList, applyTickerList, clearTickerList, openTickerList, closeTickerList, showTab,
+    openCsvHelp, closeCsvHelp,
     fx: { keys: FX_KEYS, baked: FX_BAKED_RATE, fetchFx, resolveFxOnLoad }
   };
 })();
