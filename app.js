@@ -12,8 +12,9 @@
  * Every DOM lookup is optional, so the script survives if the shell HTML is missing.
  *
  * DOM contract (see index.html): fileInput dropZone yearSelect monthChips kpiNet
- * kpiMonth kpiBest kpiAvg chartSvg chartTip monthlyBody drillBody drillTitle
- * emptyState errorBox clearBtn postedToggle fileLabel, plus the optional
+ * kpiMonth kpiBest kpiAvg chartSvg chartTip breakdownSvg breakdownTip monthlyBody
+ * drillBody drillTitle emptyState errorBox clearBtn postedToggle fileLabel,
+ * excludeInput excludeChips fxBadge fxInput fxReset, plus the optional
  * input[name="currencyToggle"] USD/AUD switch.
  *
  * Browser: window.IBKR = { state, aggregateByMonth, renderAll, ... }.
@@ -591,6 +592,9 @@ const IBKR = (function () {
     const cached = readFxCache();
     if (cached && !force && fxFresh(cached)) return applyFx(cached);
     const fresh = await fromProviders();
+    // a manual rate set while the network was in flight always wins (and suppresses refetch)
+    const manual = readFxOverride();
+    if (manual) return applyFx(manual);
     if (fresh) { writeFxCache(fresh); return applyFx(fresh); }
     if (cached) {
       return applyFx({ rate: cached.rate, fetchedAt: cached.fetchedAt, source: (cached.source || 'cache') + ' (stale)', payloadDate: cached.payloadDate });
@@ -659,7 +663,7 @@ const IBKR = (function () {
     }
     const last = keys[keys.length - 1], prev = keys.length > 1 ? keys[keys.length - 2] : null;
     const mom = prev && months[prev].total !== 0 ? (months[last].total - months[prev].total) / Math.abs(months[prev].total) : null;
-    const income = sums.interest + sums.dividends + sums.withholding + sums.fees;
+    const income = incomeOf(sums);
     setText('kpiNet', fmtMoney(net));
     setDelta('kpiNetDelta', `Options ${fmtMoney(sums.options)} · Stock ${fmtMoney(sums.assign)} · Income ${fmtMoney(income)}`);
     setText('kpiMonth', fmtMoney(months[last].total));
@@ -672,29 +676,60 @@ const IBKR = (function () {
     setDelta('kpiAvgDelta', `${positive}/${keys.length} months up`, positive * 2 >= keys.length ? 'up' : 'down');
   }
 
+  // income-breakdown series — keep these fills in sync with the .bar--opt/.bar--stock/
+  // .bar--int fallbacks and the #breakdownCard legend dots in styles.css.
+  const BREAKDOWN_SERIES = [
+    { key: 'options', name: 'Options', cls: 'bar--opt', fill: '#48BB78' },
+    { key: 'assign', name: 'Stock', cls: 'bar--stock', fill: '#667EEA' },
+    { key: 'income', name: 'Income', cls: 'bar--int', fill: '#ECC94B' }
+  ];
+
+  /** interest + dividends + withholding + fees — the breakdown's gold top segment. */
+  function incomeOf(b) {
+    return (Number(b.interest) || 0) + (Number(b.dividends) || 0) +
+      (Number(b.withholding) || 0) + (Number(b.fees) || 0);
+  }
+
   // chart hooks: .bar / .bar--neg / .line / .dot / .tick / .label are styled by styles.css
+  /**
+   * Position the hovered chart's tip (`.chart-tip`) at the element's top-centre. The tip is
+   * resolved from the target's own `.chart-wrap`, so renderChart and renderBreakdown share
+   * this maths and each SVG keeps its own tip (#chartTip / #breakdownTip).
+   */
   function showTipFor(target) {
-    const tip = byId('chartTip');
-    if (!tip || !target || !target.getBoundingClientRect) return;
-    const text = target.getAttribute && target.getAttribute('data-tip');
+    if (!target || !target.getAttribute || !target.getBoundingClientRect) return;
+    const wrap = target.closest ? target.closest('.chart-wrap') : null;
+    const tip = (wrap && wrap.querySelector ? wrap.querySelector('.chart-tip') : null) || byId('chartTip');
+    if (!tip) return;
+    const text = target.getAttribute('data-tip');
     if (!text) return;
     // Unhide before measuring: offsetParent is null while an element is hidden,
     // which would fall back to the viewport origin and misplace the first hover.
-    // #chartTip keeps its layout (styles.css: display:block + opacity/visibility),
-    // so only the hidden attribute flips it between visible and invisible.
+    // The tips keep their layout (styles.css: display:block + opacity/visibility),
+    // so only the hidden attribute flips them between visible and invisible.
     tip.textContent = text;
     tip.hidden = false;
     const host = tip.offsetParent && tip.offsetParent.getBoundingClientRect ? tip.offsetParent : null;
     const base = host ? host.getBoundingClientRect() : { left: 0, top: 0 };
     const r = target.getBoundingClientRect();
-    tip.style.left = (r.left - base.left + r.width / 2) + 'px';
+    let left = r.left - base.left + r.width / 2;
+    tip.style.left = left + 'px';
     tip.style.top = (r.top - base.top) + 'px';
+    // Keep the tip fully on screen: only bars near the edges shift, and only as far as
+    // needed, so a tooltip can never extend the page's scrollWidth (the 375px smoke test).
+    if (tip.getBoundingClientRect && typeof document !== 'undefined' && document.documentElement) {
+      const docW = document.documentElement.clientWidth;
+      const box = tip.getBoundingClientRect();
+      const overRight = box.right - (docW - 4);
+      const overLeft = 4 - box.left;
+      if (overRight > 0 && box.width <= docW - 8) left -= overRight;
+      else if (overLeft > 0) left += overLeft;
+      if (overRight > 0 || overLeft > 0) tip.style.left = Math.max(0, left) + 'px';
+    }
   }
-  function hideTip() {
-    const tip = byId('chartTip');
-    if (!tip) return;
-    tip.hidden = true; // stays laid out, styles.css fades it out via opacity/visibility
-  }
+  function hideTipFor(tip) { if (tip) tip.hidden = true; } // stays laid out, styles.css fades it out
+  function hideTip() { hideTipFor(byId('chartTip')); }
+  function hideBreakdownTip() { hideTipFor(byId('breakdownTip')); }
   function tipTarget(e) {
     const t = e.target;
     return t && t.getAttribute && t.getAttribute('data-tip') ? t : null;
@@ -748,6 +783,78 @@ const IBKR = (function () {
     for (let i = 0; i < keys.length; i++) {
       out += `<circle class="dot" cx="${cx(i).toFixed(1)}" cy="${y(cumulative[i]).toFixed(1)}" r="2.5" />`;
     }
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.innerHTML = out;
+  }
+
+  /**
+   * Stacked income-mix bars: Options (green, bottom), Stock (indigo, middle) and
+   * Income — interest + dividends + withholding + fees (gold, top). Values stay raw USD;
+   * fmtMoney/fmtCompact convert them for the active display currency. Positive and negative
+   * segments stack away from the zero line independently, so the stack height equals the
+   * month total whenever the segments share a sign.
+   */
+  function renderBreakdown(months) {
+    const svg = byId('breakdownSvg');
+    if (!svg) return;
+    const keys = visibleKeys();
+    const W = 720, H = 300, pl = 72, pr = 20, pt = 28, pb = 46;
+    const iw = W - pl - pr, ih = H - pt - pb;
+    if (!keys.length) {
+      hideBreakdownTip();
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      svg.innerHTML = '<g id="breakdownPlaceholder"><text class="chart__hint" x="360" y="150" text-anchor="middle">Load a CSV to see the income mix</text></g>';
+      return;
+    }
+    const stacks = keys.map(k => {
+      const b = months[k] || {};
+      return {
+        key: k,
+        total: Number(b.total) || 0,
+        segs: BREAKDOWN_SERIES.map(s => ({
+          name: s.name, cls: s.cls, fill: s.fill,
+          value: s.key === 'income' ? incomeOf(b) : (Number(b[s.key]) || 0)
+        }))
+      };
+    });
+    let hi = 0, lo = 0;
+    for (const st of stacks) {
+      let pos = 0, neg = 0;
+      for (const s of st.segs) { if (s.value > 0) pos += s.value; else neg += s.value; }
+      if (pos > hi) hi = pos;
+      if (neg < lo) lo = neg;
+    }
+    const pad = (hi - lo) * 0.1 || 1;
+    hi += pad; lo -= pad;
+    const y = v => pt + ih * (hi - v) / (hi - lo);
+    const band = iw / keys.length;
+    const cx = i => pl + band * (i + 0.5);
+    const barW = Math.max(6, Math.min(12, band - 6));
+    const multiYear = state.year === 'all' && new Set(keys.map(k => k.slice(0, 4))).size > 1;
+    let out = '';
+    for (const v of [hi, 0, lo]) {
+      const yy = y(v).toFixed(1);
+      out += `<line class="grid" x1="${pl}" y1="${yy}" x2="${W - pr}" y2="${yy}" stroke="currentColor" stroke-opacity="0.5" />`;
+      out += `<text class="label" x="${pl - 8}" y="${(+yy + 3).toFixed(1)}" text-anchor="end">${fmtCompact(v)}</text>`;
+    }
+    stacks.forEach((st, i) => {
+      const label = monthLabel(st.key);
+      if (state.month !== 'all' && st.key === `${state.year}-${state.month}`) {
+        out += `<rect x="${(pl + band * i + 2).toFixed(1)}" y="${pt}" width="${(band - 4).toFixed(1)}" height="${ih}" rx="4" fill="currentColor" fill-opacity="0.05" />`;
+      }
+      let pos = 0, neg = 0;
+      for (const s of st.segs) {
+        if (!s.value) continue;
+        const from = s.value > 0 ? pos : neg;
+        if (s.value > 0) pos += s.value; else neg += s.value;
+        const top = Math.min(y(from), y(from + s.value));
+        const h = Math.max(1, Math.abs(y(from + s.value) - y(from)));
+        const pct = st.total ? Math.round(s.value / st.total * 100) : null;
+        const tip = `${label} · ${s.name} ${fmtMoney(s.value)}` + (pct == null ? '' : ` (${pct}% of net)`);
+        out += `<rect class="bar ${s.cls}" x="${(cx(i) - barW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${barW}" height="${h.toFixed(1)}" rx="2" fill="${s.fill}" tabindex="0" data-tip="${esc(tip)}"><title>${esc(tip)}</title></rect>`;
+      }
+      out += `<text class="label" x="${cx(i).toFixed(1)}" y="${H - 16}" text-anchor="middle">${MONTH_NAMES[+st.key.slice(5, 7) - 1] || st.key}${multiYear ? " '" + st.key.slice(2, 4) : ''}</text>`;
+    });
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
     svg.innerHTML = out;
   }
@@ -806,6 +913,47 @@ const IBKR = (function () {
     }).join('');
   }
 
+  /**
+   * #excludeChips — the 12 largest instruments by |P&L| (all months), plus any ticker that
+   * was excluded manually. aria-pressed mirrors "excluded"; the click handler toggles it.
+   */
+  function renderExcludeChips() {
+    const el = byId('excludeChips');
+    if (!el) return;
+    const totals = new Map();
+    for (const t of state.trades) {
+      const sym = rootOf(t.symbol);
+      if (!sym) continue;
+      totals.set(sym, (totals.get(sym) || 0) + (Number(t.pnl) || 0));
+    }
+    const ranked = Array.from(totals.keys())
+      .sort((a, b) => Math.abs(totals.get(b)) - Math.abs(totals.get(a)) || (a < b ? -1 : a > b ? 1 : 0));
+    const chips = ranked.slice(0, 12);
+    for (const sym of state.exclude) if (chips.indexOf(sym) < 0) chips.push(sym);
+    el.innerHTML = chips.map(sym => {
+      const excluded = state.exclude.indexOf(sym) >= 0;
+      const title = excluded
+        ? `Excluded from every total — click to include ${sym}`
+        : `Click to exclude ${sym} from every total`;
+      return `<button type="button" class="chip" data-ticker="${esc(sym)}" aria-pressed="${excluded}" title="${esc(title)}">${esc(sym)}</button>`;
+    }).join('');
+  }
+
+  /** Footer FX badge: source label + payload date + the exact rate being applied. */
+  function renderFxBadge() {
+    const fx = state.fx || {};
+    if (!fx.source || fx.source === 'usd') { // no resolution yet
+      setText('fxBadge', hasData() ? 'FX: loading' : 'FX: waiting for a CSV');
+      return;
+    }
+    let label = String(fx.source);
+    if (label === 'cache' || label === 'cached') label = 'cached';
+    const rate = Number(fx.rate);
+    const rateText = isFinite(rate) && rate > 0 ? String(Math.round(rate * 10000) / 10000) : '—';
+    const date = fx.date ? ' · ' + fx.date : '';
+    setText('fxBadge', `FX: ${label}${date} · 1 USD=${rateText} AUD`);
+  }
+
   function renderAll() {
     const useAccrual = interestMode() === 'accrual' && state.accruals.length > 0;
     const months = aggregateByMonth(state.trades, state.cash, { interestMode: useAccrual ? 'accrual' : 'posted', accruals: state.accruals, exclude: state.exclude });
@@ -814,7 +962,10 @@ const IBKR = (function () {
     renderChips();
     renderKpis(months);
     renderChart(months);
+    renderBreakdown(months);
     renderTables(months);
+    renderExcludeChips();
+    renderFxBadge();
     const empty = byId('emptyState');
     if (empty) {
       const has = hasData();
@@ -978,8 +1129,69 @@ const IBKR = (function () {
     if (t) showTipFor(t); else hideTip();
   }
   function onChartFocus(e) { const t = tipTarget(e); if (t) showTipFor(t); }
+  function onBreakdownMove(e) {
+    const t = tipTarget(e);
+    if (t) showTipFor(t); else hideBreakdownTip();
+  }
+  function onBreakdownFocus(e) { const t = tipTarget(e); if (t) showTipFor(t); }
   function onCurrencyChange() {
     if (currencyMode() === 'aud' && state.fx.source === 'usd') resolveFxOnLoad();
+    renderAll();
+  }
+  /** Add every token in #excludeInput to the exclude list, then clear the box. */
+  function commitExcludeInput() {
+    const input = byId('excludeInput');
+    if (!input) return;
+    const parts = String(input.value || '').split(/[,;]+/).map(up).filter(Boolean);
+    if (!parts.length) return;
+    setExclude(getExclude().concat(parts));
+    input.value = '';
+  }
+  function onExcludeKeydown(e) {
+    const key = e.key;
+    if (key !== 'Enter' && key !== ',' && key !== ';') return;
+    e.preventDefault(); // the chip replaces the separator
+    commitExcludeInput();
+  }
+  // paste / IME path: a value that already carries separators commits every token
+  function onExcludeInput(e) {
+    const input = e.target;
+    if (!input || !/[,;]/.test(String(input.value || ''))) return;
+    commitExcludeInput();
+  }
+  function onExcludeChipsClick(e) {
+    const btn = e.target && e.target.closest ? e.target.closest('#excludeChips button[data-ticker]') : null;
+    if (!btn) return;
+    const sym = up(btn.getAttribute('data-ticker'));
+    if (!sym) return;
+    const list = getExclude();
+    const at = list.indexOf(sym);
+    if (at >= 0) list.splice(at, 1); else list.push(sym);
+    setExclude(list);
+  }
+  function syncFxInput() {
+    const input = byId('fxInput');
+    if (!input || (typeof document !== 'undefined' && document.activeElement === input)) return;
+    const override = readFxOverride();
+    input.value = override ? String(override.rate) : '';
+  }
+  /** A manual rate wins over the automatic chain and suppresses the network lookup. */
+  function onFxInputChange() {
+    const input = byId('fxInput');
+    if (!input) return;
+    const raw = String(input.value || '').trim();
+    if (!raw) { onFxResetClick(); return; } // emptied box = back to automatic
+    const rate = parseFloat(raw.replace(/[,\s$]/g, ''));
+    if (!isFinite(rate) || rate <= 0) { syncFxInput(); return; }
+    lsSet(FX_KEYS.override, JSON.stringify({ rate, date: new Date().toISOString().slice(0, 10) }));
+    applyFx({ rate, fetchedAt: Date.now(), source: 'manual', payloadDate: '' });
+    renderAll();
+  }
+  function onFxResetClick() {
+    lsRemove(FX_KEYS.override);
+    const input = byId('fxInput');
+    if (input) input.value = '';
+    resolveFxOnLoad(true); // cache first, then a fresh provider lookup
     renderAll();
   }
 
@@ -1003,6 +1215,16 @@ const IBKR = (function () {
     listen(byId('chartSvg'), 'mouseleave', hideTip);
     listen(byId('chartSvg'), 'focusin', onChartFocus);
     listen(byId('chartSvg'), 'focusout', hideTip);
+    listen(byId('breakdownSvg'), 'mousemove', onBreakdownMove);
+    listen(byId('breakdownSvg'), 'mouseleave', hideBreakdownTip);
+    listen(byId('breakdownSvg'), 'focusin', onBreakdownFocus);
+    listen(byId('breakdownSvg'), 'focusout', hideBreakdownTip);
+    listen(byId('excludeInput'), 'keydown', onExcludeKeydown);
+    listen(byId('excludeInput'), 'input', onExcludeInput);
+    listen(byId('excludeChips'), 'click', onExcludeChipsClick);
+    listen(byId('fxInput'), 'change', onFxInputChange);
+    listen(byId('fxReset'), 'click', onFxResetClick);
+    syncFxInput();
     const label = byId('fileLabel');
     if (label && !label.textContent.trim() && !hasData()) setFileLabel('No file selected');
   }
@@ -1024,7 +1246,7 @@ const IBKR = (function () {
   return {
     parseCsv, detectFormat, parseFlex, parseActivityStatement, parseCsvText,
     aggregateByMonth, classify, cashCategory, isAssignmentCode, monthKey, monthLabel, rootOf,
-    fmtMoney, fmtCompact, disp, currencyMode, init, loadText, clearAll, renderAll, state,
+    fmtMoney, fmtCompact, disp, currencyMode, init, loadText, clearAll, renderAll, renderBreakdown, incomeOf, state,
     getExclude, setExclude, fx: { keys: FX_KEYS, baked: FX_BAKED_RATE, fetchFx, resolveFxOnLoad }
   };
 })();

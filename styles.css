@@ -591,10 +591,12 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 .chart [data-month] { cursor: pointer; }
 .chart rect[tabindex] { cursor: pointer; }
 
-/* income-breakdown series fallbacks — same :not([fill]) contract as above */
-.chart .bar--opt:not([fill]) { fill: var(--gold); }
+/* income-breakdown series fallbacks — same :not([fill]) contract as above.
+   app.js sets these fills inline; the legend dots below mirror them:
+   Options #48BB78 · Stock #667EEA · Income #ECC94B */
+.chart .bar--opt:not([fill]) { fill: var(--green); }
 .chart .bar--stock:not([fill]) { fill: var(--indigo-bright); }
-.chart .bar--int:not([fill]) { fill: var(--teal); }
+.chart .bar--int:not([fill]) { fill: var(--gold); }
 
 .legend {
   display: flex;
@@ -618,9 +620,9 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 .legend__dot--bar { background: var(--teal); }
 .legend__dot--line { background: var(--teal-dark); border-radius: 999px; }
-.legend__dot--opt { background: var(--gold); }
+.legend__dot--opt { background: var(--green); }
 .legend__dot--stock { background: var(--indigo-bright); }
-.legend__dot--int { background: var(--teal); }
+.legend__dot--int { background: var(--gold); }
 
 /* ---------------------------------------------------------------- chips --- */
 .chips {
