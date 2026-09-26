@@ -64,7 +64,7 @@ to anyone on the same network. There is nothing to install and no build step.
 Commissions are **already netted** into the realized P&L figure IBKR reports — the app does not
 subtract them a second time. The CSV's commission column is read for context only.
 
-Multiple files can be loaded together; the app merges them and de-duplicates.
+Multiple files are concatenated; do not load overlapping periods twice or totals will double-count. Load each month once.
 
 ---
 
