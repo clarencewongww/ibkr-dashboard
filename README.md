@@ -81,6 +81,13 @@ Multiple files are concatenated; do not load overlapping periods twice or totals
 
 ## 3. Breakdown, interest, filters & currency
 
+### Monthly chart
+
+The **Monthly realised P&L** card is dual-axis: the green/red bars scale to the monthly totals
+(**left** axis) and the teal running-total line — dots carry a `Running $…` tip — scales to the
+cumulative series (**right** axis). A month far larger than the rest can no longer flatten the
+other series. The legend marks the sides: **Net P&L (left)** and **Running total (right)**.
+
 ### Breakdown
 
 The **Income breakdown** card stacks each month into three colored segments:
@@ -118,7 +125,9 @@ switch views; the Interest tab renders four KPIs, a bar chart and a per-month ta
   with dots tracks the cumulative interest across the visible months. Hover or focus a bar or dot
   for the unified monthly tip (`Net … · Interest …`).
 - **Table.** One row per visible month: month, interest, trade count, and **share of net** — that
-  month's interest ÷ that month's net P&L (same divisor as the KPI, month by month).
+  month's interest ÷ that month's net P&L (same divisor as the KPI, month by month). The static
+  header row labels the four columns; hover **Trades** for *trade executions that month, not
+  interest rows* and **Share** for the monthly rule (`—` when the month's net is 0).
 - **Posted vs accrual.** `Posted` (the default) uses posted cash interest. `Accrual` replaces the
   interest bucket with the **Interest Accruals (`IACC`)** amounts spread day-by-day across each
   accrual window, so mid-month accruals land on both months. The toggle is global — it changes the

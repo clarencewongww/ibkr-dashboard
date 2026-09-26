@@ -1056,18 +1056,21 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 @container (max-width: 620px) {
   .chart .tick,
   .chart .label { font-size: 14px; }
+  .chart .label--right { font-size: 12px; }
   .chart .chart__hint { font-size: 17px; }
 }
 
 @container (max-width: 480px) {
   .chart .tick,
   .chart .label { font-size: 18px; }
+  .chart .label--right { font-size: 13px; }
   .chart .chart__hint { font-size: 21px; }
 }
 
 @container (max-width: 360px) {
   .chart .tick,
   .chart .label { font-size: 24px; }
+  .chart .label--right { display: none; }
   .chart .chart__hint { font-size: 26px; }
 }
 
@@ -1075,18 +1078,21 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 @media (max-width: 700px) {
   .chart .tick,
   .chart .label { font-size: 14px; }
+  .chart .label--right { font-size: 12px; }
   .chart .chart__hint { font-size: 17px; }
 }
 
 @media (max-width: 520px) {
   .chart .tick,
   .chart .label { font-size: 18px; }
+  .chart .label--right { font-size: 13px; }
   .chart .chart__hint { font-size: 21px; }
 }
 
 @media (max-width: 400px) {
   .chart .tick,
   .chart .label { font-size: 24px; }
+  .chart .label--right { display: none; }
   .chart .chart__hint { font-size: 26px; }
 }
 

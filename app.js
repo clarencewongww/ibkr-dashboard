@@ -986,7 +986,7 @@ const IBKR = (function () {
     const svg = byId('chartSvg');
     if (!svg) return;
     const keys = visibleKeys();
-    const W = 720, H = 300, pl = 72, pr = 20, pt = 28, pb = 46;
+    const W = 720, H = 300, pl = 72, pr = 64, pt = 28, pb = 46;
     const iw = W - pl - pr, ih = H - pt - pb;
     if (!keys.length) {
       hideTip();
@@ -998,26 +998,38 @@ const IBKR = (function () {
     const cumulative = [];
     let run = 0;
     for (const t of totals) { run += t; cumulative.push(run); }
-    let hi = Math.max(0, ...totals, ...cumulative);
-    let lo = Math.min(0, ...totals, ...cumulative);
-    const pad = (hi - lo) * 0.1 || 1;
-    hi += pad; lo -= pad;
-    const y = v => pt + ih * (hi - v) / (hi - lo);
+    // Dual axes: bars scale to the monthly totals (left), the running line to the cumulative
+    // series (right), so neither series can flatten the other.
+    const domain = values => {
+      let hi = Math.max(0, ...values);
+      let lo = Math.min(0, ...values);
+      const pad = (hi - lo) * 0.1 || 1;
+      return [hi + pad, lo - pad];
+    };
+    const [hiL, loL] = domain(totals);
+    const [hiR, loR] = domain(cumulative);
+    const scale = (hi, lo) => v => pt + ih * (hi - v) / (hi - lo);
+    const yL = scale(hiL, loL);
+    const yR = scale(hiR, loR);
     const band = iw / keys.length;
     const cx = i => pl + band * (i + 0.5);
     const barW = Math.max(6, Math.min(12, band - 6));
-    const zero = y(0);
+    const zeroL = yL(0);
     const multiYear = state.year === 'all' && new Set(keys.map(k => k.slice(0, 4))).size > 1;
     let out = '';
-    for (const v of [hi, 0, lo]) {
-      const yy = y(v).toFixed(1);
+    // Grid + left labels follow the bar domain; right labels track the running-total domain.
+    for (const v of [hiL, 0, loL]) {
+      const yy = yL(v).toFixed(1);
       out += `<line class="grid" x1="${pl}" y1="${yy}" x2="${W - pr}" y2="${yy}" stroke="currentColor" stroke-opacity="0.5" />`;
       out += `<text class="label" x="${pl - 8}" y="${(+yy + 3).toFixed(1)}" text-anchor="end">${fmtCompact(v)}</text>`;
     }
+    for (const v of [hiR, 0, loR]) {
+      out += `<text class="label label--right" x="${W - pr + 8}" y="${(yR(v) + 3).toFixed(1)}" text-anchor="start">${fmtCompact(v)}</text>`;
+    }
     keys.forEach((k, i) => {
       const total = totals[i];
-      const top = total >= 0 ? y(total) : zero;
-      const height = Math.max(1, Math.abs(y(total) - zero));
+      const top = total >= 0 ? yL(total) : zeroL;
+      const height = Math.max(1, Math.abs(yL(total) - zeroL));
       const tip = monthTipText(k, months[k], cumulative[i]);
       if (state.month !== 'all' && k === `${state.year}-${state.month}`) {
         out += `<rect x="${(pl + band * i + 2).toFixed(1)}" y="${pt}" width="${(band - 4).toFixed(1)}" height="${ih}" rx="4" fill="currentColor" fill-opacity="0.05" />`;
@@ -1025,9 +1037,10 @@ const IBKR = (function () {
       out += `<rect class="bar${total < 0 ? ' bar--neg' : ''}" x="${(cx(i) - barW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${barW}" height="${height.toFixed(1)}" rx="2" fill="${total >= 0 ? '#48BB78' : '#F56565'}" tabindex="0" data-tip="${esc(tip)}"><title>${esc(tip)}</title></rect>`;
       out += `<text class="label" x="${cx(i).toFixed(1)}" y="${H - 16}" text-anchor="middle">${MONTH_NAMES[+k.slice(5, 7) - 1] || k}${multiYear ? " '" + k.slice(2, 4) : ''}</text>`;
     });
-    out += `<polyline class="line" points="${keys.map((k, i) => `${cx(i).toFixed(1)},${y(cumulative[i]).toFixed(1)}`).join(' ')}" fill="none" stroke="#4FD1C5" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`;
+    out += `<polyline class="line" points="${keys.map((k, i) => `${cx(i).toFixed(1)},${yR(cumulative[i]).toFixed(1)}`).join(' ')}" fill="none" stroke="#4FD1C5" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`;
     for (let i = 0; i < keys.length; i++) {
-      out += `<circle class="dot" cx="${cx(i).toFixed(1)}" cy="${y(cumulative[i]).toFixed(1)}" r="2.5" />`;
+      const runTip = `${monthLabel(keys[i])} · Running ${fmtMoney(cumulative[i])}`;
+      out += `<circle class="dot" cx="${cx(i).toFixed(1)}" cy="${yR(cumulative[i]).toFixed(1)}" r="2.5" tabindex="0" data-tip="${esc(runTip)}"><title>${esc(runTip)}</title></circle>`;
     }
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
     svg.innerHTML = out;
