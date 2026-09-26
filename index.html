@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- FX rates are requested from a public endpoint only when the user switches to AUD;
+     no-referrer keeps this page's URL (and any query string) out of that request. -->
+<meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#151928">
 <meta name="description" content="Local IBKR Activity Statement dashboard: monthly realised P&amp;L, instrument drill-down. Files never leave the browser.">
@@ -50,6 +53,18 @@
              #drillTable   > tbody#drillBody     cols: Symbol | Asset class | Trades | Net P&L
              #drillTitle   drill card heading
              cells use .num .pos .neg · monthly rows carry .is-clickable + [data-month]
+  Currency   #currencyToggle  fieldset; radios name="currencyToggle" value="usd"|"aud"
+             ("usd" checked). app.js listens for "change" on the fieldset (radios bubble)
+             and reads input[name="currencyToggle"]:checked.
+             #fxInput  manual USD/AUD rate (text + inputmode=decimal; empty = automatic)
+             #fxReset  button → back to the automatic rate
+             #fxBadge  footer status text ("FX: live · <date>" / "FX: manual" / "FX: …")
+  Exclude    #excludeInput  free-text tickers, comma separated ("AMD, NVDA")
+             #excludeChips  receives button.chip[data-ticker][aria-pressed] elements;
+                            aria-pressed="true" = ticker is excluded from every aggregate
+  Breakdown  #breakdownCard  card shell · #breakdownSvg — 720x300 viewBox, same contract
+             as #chartSvg (app.js re-declares the viewBox and draws .chart primitives)
+             #breakdownTip — same hidden/[hidden] contract as #chartTip
   States     #emptyState — app.js sets hidden + inline display:none once data loads;
              the dashed #dropZone then collapses via :has() in styles.css
              #errorBox — hidden by default, role="alert"; app.js writes .js-error-text
@@ -80,6 +95,28 @@
         <select id="yearSelect" class="select" name="yearSelect">
           <option value="all">All years</option>
         </select>
+      </div>
+
+      <fieldset id="currencyToggle" class="segmented" aria-label="Display currency">
+        <legend class="visually-hidden">Currency</legend>
+        <label class="segmented__opt">
+          <input type="radio" name="currencyToggle" id="currencyToggleUsd" value="usd" checked>
+          <span class="segmented__pill">USD</span>
+        </label>
+        <label class="segmented__opt">
+          <input type="radio" name="currencyToggle" id="currencyToggleAud" value="aud">
+          <span class="segmented__pill">AUD</span>
+        </label>
+      </fieldset>
+
+      <div class="field field--fx">
+        <label class="field__label" for="fxInput">Rate USD/AUD</label>
+        <div class="fx-row">
+          <input id="fxInput" class="input" type="text" inputmode="decimal" autocomplete="off"
+                 spellcheck="false" placeholder="1.423" aria-describedby="fxHint">
+          <button id="fxReset" class="btn btn--ghost" type="button">Auto</button>
+          <span id="fxHint" class="visually-hidden">Leave empty to use the automatic rate.</span>
+        </div>
       </div>
 
       <div class="field field--load">
@@ -275,7 +312,16 @@
         </span>
       </div>
 
-      <div id="monthChips" class="chips" role="group" aria-label="Filter by month"></div>
+      <div class="filter-bar">
+        <div id="monthChips" class="chips" role="group" aria-label="Filter by month"></div>
+
+        <div id="excludeWrap">
+          <label class="field__label" for="excludeInput">Exclude tickers</label>
+          <input id="excludeInput" class="input" type="text" placeholder="e.g. AMD, NVDA"
+                 autocomplete="off" spellcheck="false">
+          <div id="excludeChips" class="chips" role="group" aria-label="Excluded tickers"></div>
+        </div>
+      </div>
 
       <div class="table-scroll" role="region" aria-label="Monthly summary" tabindex="0">
         <table id="monthlyTable" class="table">
@@ -295,6 +341,28 @@
     </section>
 
   </div>
+
+  <section class="card chart-card" id="breakdownCard" aria-labelledby="breakdownTitle">
+    <div class="card__head">
+      <div class="card__head-copy">
+        <h2 class="card__title" id="breakdownTitle">Income breakdown</h2>
+        <p class="card__sub">Options vs stock vs interest.</p>
+      </div>
+    </div>
+
+    <div class="chart-wrap">
+      <svg id="breakdownSvg" class="chart" viewBox="0 0 720 300" width="720" height="300"
+           preserveAspectRatio="xMidYMid meet" role="img"
+           aria-label="Income split between options, stock and interest plus dividends"></svg>
+      <div id="breakdownTip" class="chart-tip" aria-hidden="true" hidden></div>
+    </div>
+
+    <ul class="legend">
+      <li class="legend__item"><span class="legend__dot legend__dot--opt" aria-hidden="true"></span>Options</li>
+      <li class="legend__item"><span class="legend__dot legend__dot--stock" aria-hidden="true"></span>Stock</li>
+      <li class="legend__item"><span class="legend__dot legend__dot--int" aria-hidden="true"></span>Interest + Div</li>
+    </ul>
+  </section>
 
   <section class="card table-card" aria-labelledby="drillTitle">
     <div class="card__head card__head--lead">
@@ -339,6 +407,17 @@
   </noscript>
 
 </main>
+
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <p class="site-footer__note">Your statement is parsed in this browser. Only when you switch to AUD does the page request one public USD&rarr;AUD rate — no statement data is ever sent.</p>
+    <p class="site-footer__meta">
+      <a class="site-footer__link" href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer">Rates By Exchange Rate API</a>
+      <span class="site-footer__sep" aria-hidden="true">·</span>
+      <span id="fxBadge" class="fx-badge" aria-live="polite">FX: loading</span>
+    </p>
+  </div>
+</footer>
 
 <script src="app.js" defer></script>
 </body>

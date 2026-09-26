@@ -13,6 +13,11 @@
   --teal-dark: #319795;
   --green: #48BB78;
   --red: #F56565;
+  /* chart series — income breakdown: options / stock / interest + dividends.
+     --indigo further down is the hero-ink tint (#313860), so the stock series
+     gets its own brighter token instead of recolouring existing UI. */
+  --gold: #ECC94B;
+  --indigo-bright: #667EEA;
   --hero: linear-gradient(81.62deg, #313860 2.25%, #151928 79.87%);
   --border: #E2E8F0;
   --radius: 8px;
@@ -25,6 +30,7 @@
   --indigo-tint: rgba(49, 56, 96, .10);
   --green-tint: rgba(72, 187, 120, .14);
   --slate-tint: rgba(160, 174, 192, .20);
+  --red-tint: rgba(245, 101, 101, .12);
   --line: #EDF2F7;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --gap: 24px;
@@ -301,6 +307,37 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 .select:hover { border-color: var(--muted); }
 
+/* text input — exclude tickers (#excludeInput) and the manual FX rate (#fxInput) */
+.input {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.input::placeholder { color: var(--muted); }
+.input:hover { border-color: var(--muted); }
+.input:focus-visible { border-color: var(--teal); }
+
+/* the FX rate sits on the hero gradient, so it inverts */
+.field--fx .input {
+  width: 112px;
+  flex: none;
+  border-color: rgba(255, 255, 255, .28);
+  background: rgba(255, 255, 255, .08);
+  color: #fff;
+}
+
+.field--fx .input::placeholder { color: rgba(255, 255, 255, .45); }
+.field--fx .input:hover { border-color: rgba(255, 255, 255, .55); }
+
+.fx-row { display: flex; align-items: center; gap: 8px; }
+
 .file-label {
   max-width: 200px;
   overflow: hidden;
@@ -465,6 +502,30 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 /* ---------------------------------------------------------------- chart --- */
 .chart-card { min-width: 0; }
 
+/* the breakdown card spans the page, so the 720x300 chart keeps a sane size
+   instead of scaling up to the full card width on a 1440px display */
+#breakdownCard .chart-wrap {
+  max-width: 760px;
+  margin-inline: auto;
+}
+
+#breakdownCard .legend { justify-content: center; }
+
+/* app.js draws the breakdown bars; until it has, the card shows a hint instead
+   of an empty 720x300 box (:empty retires this rule on the first render) */
+#breakdownCard .chart-wrap:has(#breakdownSvg:empty)::after {
+  content: "Load a CSV to see the income mix";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 0 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  pointer-events: none;
+}
+
 .chart-wrap {
   position: relative;
   min-width: 0;
@@ -500,13 +561,15 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   box-shadow: var(--shadow-pop);
 }
 
-#chartTip {
+#chartTip,
+#breakdownTip {
   display: block !important; /* stays laid out so offsetParent is never null */
   opacity: 0;
   visibility: hidden;
 }
 
-#chartTip:not([hidden]) {
+#chartTip:not([hidden]),
+#breakdownTip:not([hidden]) {
   opacity: 1;
   visibility: visible;
 }
@@ -527,6 +590,11 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 .chart .label { fill: var(--muted); font-size: 11px; font-family: var(--font); }
 .chart [data-month] { cursor: pointer; }
 .chart rect[tabindex] { cursor: pointer; }
+
+/* income-breakdown series fallbacks — same :not([fill]) contract as above */
+.chart .bar--opt:not([fill]) { fill: var(--gold); }
+.chart .bar--stock:not([fill]) { fill: var(--indigo-bright); }
+.chart .bar--int:not([fill]) { fill: var(--teal); }
 
 .legend {
   display: flex;
@@ -550,6 +618,9 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 .legend__dot--bar { background: var(--teal); }
 .legend__dot--line { background: var(--teal-dark); border-radius: 999px; }
+.legend__dot--opt { background: var(--gold); }
+.legend__dot--stock { background: var(--indigo-bright); }
+.legend__dot--int { background: var(--teal); }
 
 /* ---------------------------------------------------------------- chips --- */
 .chips {
@@ -585,6 +656,37 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   background: var(--teal-tint);
   border-color: var(--teal);
   color: var(--teal-dark);
+}
+
+/* exclude filter — month chips on the left, ticker exclusions on the right */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 20px;
+  margin-bottom: 16px;
+}
+
+.filter-bar .chips { margin-bottom: 0; }
+
+#excludeWrap {
+  display: grid;
+  gap: 6px;
+  flex: 1 1 280px;
+  max-width: 420px;
+  min-width: 0;
+}
+
+#excludeWrap .field__label { color: var(--muted); }
+
+#excludeWrap .input { font-size: 13.5px; }
+
+/* an excluded ticker reads as a warning, never as a selection */
+#excludeChips .chip[aria-pressed="true"] {
+  background: var(--red-tint);
+  border-color: var(--red);
+  color: #822727;
 }
 
 /* --------------------------------------------------------------- tables --- */
@@ -795,6 +897,49 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   .chart .chart__hint { font-size: 26px; }
 }
 
+/* ---------------------------------------------------------------- footer --- */
+.site-footer {
+  border-top: 1px solid var(--border);
+  background: var(--card);
+}
+
+.site-footer__inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 24px;
+  padding-block: 18px 28px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.site-footer__note { max-width: 68ch; }
+
+.site-footer__meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.site-footer__link {
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.site-footer__link:hover { border-bottom-color: currentColor; }
+
+.site-footer__sep { color: var(--border); }
+
+.fx-badge {
+  color: var(--muted);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* ---------------------------------------------------------- responsive --- */
 @media (min-width: 620px) {
   .hero { padding-block: 34px 40px; }
@@ -813,10 +958,12 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   .hero__controls { width: 100%; }
   .field { flex: 1 1 auto; }
   .field--load { flex-basis: 100%; }
+  .field--fx { flex-basis: 100%; }
   .select { width: 100%; }
   .file-label { max-width: 100%; order: 3; flex-basis: 100%; }
   .card { padding: 18px; }
   .dropzone { padding: 30px 18px; }
+  #breakdownCard .chart-wrap { max-width: 100%; }
 }
 
 /* ------------------------------------------------------- reduced motion --- */
