@@ -7,12 +7,14 @@
  *   - Flex Query CSV  — HEADER/DATA rows with section codes (TRNT, CTRN, IACC, ...)
  *   - Activity Statement CSV — Section,Kind,... rows (Trades / Dividends / ...)
  *
- * Zero dependencies, zero network calls; works from file:// via FileReader + localStorage.
+ * Zero dependencies; works from file:// via FileReader + localStorage. The only network
+ * calls are the optional USD/AUD rate lookups (cached; a baked rate covers offline use).
  * Every DOM lookup is optional, so the script survives if the shell HTML is missing.
  *
  * DOM contract (see index.html): fileInput dropZone yearSelect monthChips kpiNet
  * kpiMonth kpiBest kpiAvg chartSvg chartTip monthlyBody drillBody drillTitle
- * emptyState errorBox clearBtn postedToggle fileLabel.
+ * emptyState errorBox clearBtn postedToggle fileLabel, plus the optional
+ * input[name="currencyToggle"] USD/AUD switch.
  *
  * Browser: window.IBKR = { state, aggregateByMonth, renderAll, ... }.
  * Node (tests): module.exports.
@@ -21,6 +23,11 @@
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const CACHE_KEY = 'ibkr-v1';
 const CACHE_MAX_BYTES = 2 * 1024 * 1024; // bigger raw files are parsed but not cached
+const EXCLUDE_KEY = 'ibkr-exclude-v1';   // persisted root-symbol exclude list
+const FX_KEYS = { cache: 'fx-audusd-v1', override: 'fx_override' };
+const FX_TTL_MS = 12 * 60 * 60 * 1000;   // fresh-cache window for the FX rate
+const FX_TIMEOUT_MS = 5000;              // per-provider request timeout
+const FX_BAKED_RATE = 1.423;             // offline USD->AUD approximation
 const FLEX_SECTIONS = ['TRNT', 'CTRN', 'CRTT', 'FIFO', 'CDIV', 'ACCT', 'IACC'];
 const FLEX_ROW_KINDS = ['HEADER', 'DATA'];
 const OPTION_ASSETS = new Set(['OPT', 'FOP', 'EQUITY AND INDEX OPTIONS', 'EQUITY_AND_INDEX_OPTIONS', 'INDEX OPTIONS', 'FUTURE OPTIONS', 'FUTURES OPTIONS', 'WAR', 'IOPT']);
@@ -72,15 +79,30 @@ const IBKR = (function () {
     const n = +String(key).slice(5, 7);
     return MONTH_NAMES[n - 1] ? MONTH_NAMES[n - 1] + ' ' + String(key).slice(0, 4) : String(key);
   }
-  function fmtMoney(value) {
-    const v = Number(value) || 0;
-    return (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  /** 1 while displaying USD; state.fx.rate while displaying AUD. */
+  function fxRateFor(currency) {
+    if (currency !== 'aud') return 1;
+    const rate = Number(state.fx && state.fx.rate);
+    return isFinite(rate) && rate > 0 ? rate : 1;
   }
-  function fmtCompact(value) {
-    const a = Math.abs(Number(value) || 0);
-    if (a >= 1000) return (value < 0 ? '-' : '') + '$' + (a / 1000).toFixed(a >= 10000 ? 0 : 1) + 'k';
-    if (a === 0) return '$0';
-    return (value < 0 ? '-' : '') + '$' + Math.round(a);
+  /** Raw USD amount -> amount in the active display currency. */
+  function disp(value) {
+    return (Number(value) || 0) * fxRateFor(currencyMode());
+  }
+  /** fmtMoney(value[, 'usd'|'aud']) — value is always raw USD; currency defaults to the active mode. */
+  function fmtMoney(value, currency) {
+    const cur = currency === 'aud' || currency === 'usd' ? currency : currencyMode();
+    const v = (Number(value) || 0) * fxRateFor(cur);
+    return (v < 0 ? '-' : '') + (cur === 'aud' ? 'A$' : '$') +
+      Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function fmtCompact(value, currency) {
+    const cur = currency === 'aud' || currency === 'usd' ? currency : currencyMode();
+    const n = (Number(value) || 0) * fxRateFor(cur);
+    const a = Math.abs(n), sym = cur === 'aud' ? 'A$' : '$';
+    if (a >= 1000) return (n < 0 ? '-' : '') + sym + (a / 1000).toFixed(a >= 10000 ? 0 : 1) + 'k';
+    if (a === 0) return sym + '0';
+    return (n < 0 ? '-' : '') + sym + Math.round(a);
   }
 
   // ------------------------------------------------------------------ CSV
@@ -301,6 +323,12 @@ const IBKR = (function () {
     return 'otherStock';
   }
 
+  /** Root symbol: "AMD   260220P00185000" -> "AMD", " amzn " -> "AMZN". */
+  function rootOf(symbol) {
+    const s = up(symbol);
+    return s ? s.split(/\s+/)[0] : '';
+  }
+
   function cashCategory(type) {
     const t = up(type);
     if (!t) return null;
@@ -316,16 +344,22 @@ const IBKR = (function () {
   }
 
   /**
-   * Aggregate trades + cash into { 'yyyy-MM': buckets }. Amounts stay raw (display rounds).
+   * Aggregate trades + cash into { 'yyyy-MM': buckets }. Amounts stay raw USD (display converts).
    * interestMode 'accrual' replaces posted cash interest with the Interest Accruals (IACC) split.
+   * opts.exclude (array of root symbols, default []) hides matching trades; cash rows are only
+   * filtered when they carry an explicit symbol.
    */
   function aggregateByMonth(trades, cash, options) {
     const months = {};
     const bucket = key => months[key] || (months[key] = emptyMonth());
     const opts = options || {};
     const useAccrual = opts.interestMode === 'accrual' && opts.accruals && opts.accruals.length > 0;
+    const excludeParts = Array.isArray(opts.exclude) ? opts.exclude : String(opts.exclude == null ? '' : opts.exclude).split(/[,;]+/);
+    const exclude = new Set(excludeParts.map(up).filter(Boolean));
+    const isExcluded = symbol => exclude.size > 0 && exclude.has(rootOf(symbol));
 
     for (const t of trades || []) {
+      if (isExcluded(t.symbol)) continue;
       const key = monthKey(t.date);
       if (!key) continue;
       const b = bucket(key);
@@ -339,6 +373,7 @@ const IBKR = (function () {
     }
 
     for (const c of cash || []) {
+      if (isExcluded(c.symbol)) continue; // ticker-less cash descriptions are never filtered
       const cat = cashCategory(c.type);
       if (!cat || (cat === 'interest' && useAccrual)) continue;
       const key = monthKey(c.date);
@@ -368,7 +403,12 @@ const IBKR = (function () {
 
   // ------------------------------------------------------------- UI state
 
-  const state = { trades: [], cash: [], accruals: [], months: {}, year: 'all', month: 'all', name: '', format: '' };
+  const state = {
+    trades: [], cash: [], accruals: [], months: {}, year: 'all', month: 'all', name: '', format: '',
+    exclude: [],                 // root symbols skipped during aggregation (persisted)
+    currency: 'usd',             // fallback when no currencyToggle input exists
+    fx: { rate: 1, fetchedAt: 0, source: 'usd', date: '' }
+  };
   const boundEvents = new WeakMap();
   let restoreTried = false;
 
@@ -410,10 +450,168 @@ const IBKR = (function () {
     if (checked) return String(checked.value || '').trim().toLowerCase() === 'accrual' ? 'accrual' : 'posted';
     return 'posted';
   }
+  /** 'aud' when the toggle says so (or state.currency does), otherwise 'usd'. */
+  function currencyMode() {
+    if (typeof document !== 'undefined' && document.querySelector) {
+      const checked = document.querySelector('input[name="currencyToggle"]:checked');
+      if (checked) {
+        const v = String(checked.value || '').trim().toLowerCase();
+        if (v === 'aud' || v === 'usd') state.currency = v;
+      }
+    }
+    return state.currency === 'aud' ? 'aud' : 'usd';
+  }
   function visibleKeys() {
     return Object.keys(state.months)
       .filter(k => state.year === 'all' || !state.year || k.slice(0, 4) === state.year)
       .sort();
+  }
+
+  // ------------------------------------------------------- exclude/currency
+
+  function getExclude() { return state.exclude.slice(); }
+  /** setExclude(['AMD', ...]) / setExclude('AMD,MSFT') — normalizes, persists, re-renders. */
+  function setExclude(list) {
+    const parts = Array.isArray(list) ? list : String(list == null ? '' : list).split(/[,;]+/);
+    const seen = new Set(), out = [];
+    for (const part of parts) {
+      const sym = up(part);
+      if (!sym || seen.has(sym)) continue;
+      seen.add(sym); out.push(sym);
+    }
+    state.exclude = out;
+    lsSet(EXCLUDE_KEY, JSON.stringify(out));
+    renderAll();
+    return out;
+  }
+
+  // ------------------------------------------------------------------- FX
+
+  function lsGet(key) {
+    try { return typeof localStorage === 'undefined' ? null : localStorage.getItem(key); } catch (err) { return null; }
+  }
+  function lsSet(key, value) {
+    try { if (typeof localStorage !== 'undefined') localStorage.setItem(key, value); } catch (err) { /* storage disabled/full */ }
+  }
+  function lsRemove(key) {
+    try { if (typeof localStorage !== 'undefined') localStorage.removeItem(key); } catch (err) { /* ignore */ }
+  }
+
+  // USD -> AUD chain: manual override > fresh cache > providers > stale cache > baked rate.
+  const FX_PROVIDERS = [
+    {
+      source: 'frankfurter', url: 'https://api.frankfurter.dev/v2/rate/USD/AUD',
+      pick: j => ({ rate: j && j.rate, payloadDate: j && j.date })
+    },
+    {
+      source: 'er-api', url: 'https://open.er-api.com/v6/latest/USD',
+      pick: j => ({ rate: j && j.result === 'success' && j.rates ? j.rates.AUD : NaN, payloadDate: j && j.time_last_update_utc })
+    },
+    {
+      source: 'fawazahmed0', url: 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.min.json',
+      pick: j => ({ rate: j && j.usd ? j.usd.aud : NaN, payloadDate: j && j.date })
+    }
+  ];
+
+  /** Manual override (plain number or {"rate":1.5,"date":"..."}) — wins and never hits the network. */
+  function readFxOverride() {
+    const raw = lsGet(FX_KEYS.override);
+    if (!raw) return null;
+    const s = String(raw).trim();
+    let rate = NaN, payloadDate = '';
+    try {
+      if (s.charAt(0) === '{') {
+        const o = JSON.parse(s) || {};
+        rate = Number(o.rate); payloadDate = String(o.date || o.payloadDate || '');
+      } else rate = Number(s);
+    } catch (err) { rate = Number(s); }
+    if (!isFinite(rate) || rate <= 0) return null;
+    return { rate, fetchedAt: Date.now(), source: 'manual', payloadDate };
+  }
+
+  function readFxCache() {
+    const raw = lsGet(FX_KEYS.cache);
+    if (!raw) return null;
+    try {
+      const o = JSON.parse(raw) || {};
+      const rate = Number(o.rate);
+      if (!isFinite(rate) || rate <= 0) return null;
+      return {
+        rate, fetchedAt: Number(o.fetchedAt) || 0,
+        source: String(o.source || 'cache'), payloadDate: String(o.payloadDate || o.date || '')
+      };
+    } catch (err) { return null; }
+  }
+  function fxFresh(fx) { return !!fx && fx.fetchedAt > 0 && Date.now() - fx.fetchedAt < FX_TTL_MS; }
+
+  function applyFx(fx) {
+    state.fx = {
+      rate: fx.rate,
+      fetchedAt: fx.fetchedAt || Date.now(),
+      source: fx.source || 'cache',
+      date: fx.payloadDate || ''
+    };
+    return state.fx;
+  }
+  function writeFxCache(fx) {
+    lsSet(FX_KEYS.cache, JSON.stringify({ rate: fx.rate, fetchedAt: fx.fetchedAt, source: fx.source, payloadDate: fx.payloadDate || '' }));
+  }
+
+  /** fetch() JSON with an AbortController timeout. */
+  function fetchJson(url, timeoutMs) {
+    if (typeof fetch !== 'function') return Promise.reject(new Error('fetch unavailable'));
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => { try { ctl.abort(); } catch (err) { /* ignore */ } }, timeoutMs || FX_TIMEOUT_MS) : null;
+    const stop = () => { if (timer) clearTimeout(timer); };
+    const init = { cache: 'no-store' };
+    if (ctl) init.signal = ctl.signal;
+    return fetch(url, init).then(res => {
+      if (!res || !res.ok) throw new Error('HTTP ' + (res && res.status));
+      return res.json();
+    }).then(json => { stop(); return json; }, err => { stop(); throw err; });
+  }
+
+  async function fromProviders() {
+    for (const p of FX_PROVIDERS) {
+      try {
+        const picked = p.pick(await fetchJson(p.url, FX_TIMEOUT_MS)) || {};
+        const rate = Number(picked.rate);
+        if (isFinite(rate) && rate > 0) {
+          return { rate, fetchedAt: Date.now(), source: p.source, payloadDate: String(picked.payloadDate || '') };
+        }
+      } catch (err) { /* try the next provider */ }
+    }
+    return null;
+  }
+
+  /** Resolve the USD/AUD rate through the fallback chain and apply it to state.fx. */
+  async function fetchFx(force) {
+    const override = readFxOverride();
+    if (override) return applyFx(override);
+    const cached = readFxCache();
+    if (cached && !force && fxFresh(cached)) return applyFx(cached);
+    const fresh = await fromProviders();
+    if (fresh) { writeFxCache(fresh); return applyFx(fresh); }
+    if (cached) {
+      return applyFx({ rate: cached.rate, fetchedAt: cached.fetchedAt, source: (cached.source || 'cache') + ' (stale)', payloadDate: cached.payloadDate });
+    }
+    return applyFx({ rate: FX_BAKED_RATE, fetchedAt: Date.now(), source: 'approximate', payloadDate: '' });
+  }
+
+  let fxInFlight = null;
+  /**
+   * Non-blocking FX kickoff: an override/cache is applied synchronously so the next paint can
+   * convert, then renderAll() runs again once the network (or a fallback) resolves.
+   */
+  function resolveFxOnLoad(force) {
+    if (fxInFlight) return fxInFlight;
+    const quick = readFxOverride() || readFxCache();
+    if (quick) applyFx(quick);
+    fxInFlight = fetchFx(!!force)
+      .then(fx => { renderAll(); return fx; })
+      .catch(() => state.fx)
+      .then(fx => { fxInFlight = null; return fx; });
+    return fxInFlight;
   }
 
   // ------------------------------------------------------------- rendering
@@ -589,6 +787,7 @@ const IBKR = (function () {
     };
     for (const t of state.trades) {
       if (monthKey(t.date) !== key) continue;
+      if (state.exclude.length && state.exclude.indexOf(rootOf(t.symbol)) >= 0) continue;
       const where = classify(t);
       add(t.symbol || '—', where === 'options' ? 'Options' : where === 'assign' ? 'Assignment' : 'Stock (other)', Number(t.pnl) || 0);
     }
@@ -609,7 +808,7 @@ const IBKR = (function () {
 
   function renderAll() {
     const useAccrual = interestMode() === 'accrual' && state.accruals.length > 0;
-    const months = aggregateByMonth(state.trades, state.cash, { interestMode: useAccrual ? 'accrual' : 'posted', accruals: state.accruals });
+    const months = aggregateByMonth(state.trades, state.cash, { interestMode: useAccrual ? 'accrual' : 'posted', accruals: state.accruals, exclude: state.exclude });
     state.months = months;
     renderYears(months);
     renderChips();
@@ -645,6 +844,7 @@ const IBKR = (function () {
     } catch (err) { /* storage disabled or full — parsed result still renders */ }
     showError('');
     renderAll();
+    resolveFxOnLoad(); // render first, then patch in the resolved FX rate
   }
 
   function parseMaybeThrow(text, fileName) {
@@ -700,6 +900,13 @@ const IBKR = (function () {
     if (restoreTried) return;
     restoreTried = true;
     try {
+      const rawExclude = lsGet(EXCLUDE_KEY);
+      if (rawExclude) {
+        const list = JSON.parse(rawExclude);
+        if (Array.isArray(list)) state.exclude = list.map(up).filter(Boolean);
+      }
+    } catch (err) { /* corrupt exclude list — start unfiltered */ }
+    try {
       const raw = localStorage.getItem(CACHE_KEY);
       if (!raw) return;
       const saved = JSON.parse(raw);
@@ -717,7 +924,9 @@ const IBKR = (function () {
   function clearAll() {
     state.trades = []; state.cash = []; state.accruals = []; state.months = {};
     state.year = 'all'; state.month = 'all'; state.name = ''; state.format = '';
-    try { localStorage.removeItem(CACHE_KEY); } catch (err) { /* ignore */ }
+    state.exclude = [];
+    lsRemove(CACHE_KEY);
+    lsRemove(EXCLUDE_KEY);
     const input = byId('fileInput');
     if (input) input.value = '';
     setFileLabel('No file selected');
@@ -769,6 +978,10 @@ const IBKR = (function () {
     if (t) showTipFor(t); else hideTip();
   }
   function onChartFocus(e) { const t = tipTarget(e); if (t) showTipFor(t); }
+  function onCurrencyChange() {
+    if (currencyMode() === 'aud' && state.fx.source === 'usd') resolveFxOnLoad();
+    renderAll();
+  }
 
   function wire() {
     listen(byId('fileInput'), 'change', onFileChange);
@@ -782,6 +995,10 @@ const IBKR = (function () {
     listen(byId('monthChips'), 'click', onChipClick);
     listen(byId('monthlyBody'), 'click', onRowClick);
     listen(byId('postedToggle'), 'change', renderAll);
+    if (typeof document !== 'undefined' && document.querySelectorAll) {
+      const toggles = document.querySelectorAll('input[name="currencyToggle"]');
+      for (let i = 0; i < toggles.length; i++) listen(toggles[i], 'change', onCurrencyChange);
+    }
     listen(byId('chartSvg'), 'mousemove', onChartMove);
     listen(byId('chartSvg'), 'mouseleave', hideTip);
     listen(byId('chartSvg'), 'focusin', onChartFocus);
@@ -795,15 +1012,20 @@ const IBKR = (function () {
     wire();
     restore();
     renderAll();
+    if (hasData()) resolveFxOnLoad(); // only reach for the network when there is something to convert
     if (typeof window !== 'undefined' && !byId('fileInput') && document.readyState !== 'complete') {
-      window.addEventListener('load', function () { wire(); restore(); renderAll(); });
+      window.addEventListener('load', function () {
+        wire(); restore(); renderAll();
+        if (hasData()) resolveFxOnLoad();
+      });
     }
   }
 
   return {
     parseCsv, detectFormat, parseFlex, parseActivityStatement, parseCsvText,
-    aggregateByMonth, classify, cashCategory, isAssignmentCode, monthKey, monthLabel,
-    fmtMoney, init, loadText, clearAll, renderAll, state
+    aggregateByMonth, classify, cashCategory, isAssignmentCode, monthKey, monthLabel, rootOf,
+    fmtMoney, fmtCompact, disp, currencyMode, init, loadText, clearAll, renderAll, state,
+    getExclude, setExclude, fx: { keys: FX_KEYS, baked: FX_BAKED_RATE, fetchFx, resolveFxOnLoad }
   };
 })();
 
