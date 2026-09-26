@@ -516,6 +516,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 /* card-head action cluster (basis toggle + its info button) */
 .card__head-actions {
+  position: relative; /* anchors the #basisHelp .info-tip popover */
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -543,6 +544,38 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 }
 
 .info:hover { border-color: var(--teal); color: var(--teal-dark); }
+
+/* #basisHelp — the Posted vs Accrual explanation, shown as a popover on
+   hover/focus instead of being visually hidden text. It stays in the a11y tree
+   (opacity, not display) and #basisInfo points at it with aria-describedby. */
+.info-tip {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 3;
+  width: max-content;
+  max-width: min(340px, calc(100vw - 48px));
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #1f2733;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-align: left;
+  box-shadow: var(--shadow-pop);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .12s ease;
+}
+
+#basisInfo:hover + .info-tip,
+#basisInfo:focus-visible + .info-tip {
+  opacity: 1;
+  visibility: visible;
+}
 
 .card__title { font-size: 17px; color: var(--ink); }
 
@@ -638,8 +671,12 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 .chart-card { min-width: 0; }
 
 /* the breakdown card sits in the 2x2 split, so the 720x300 chart keeps a sane
-   size instead of scaling up with the card */
-#interestCard { min-width: 0; } /* lets the 340px table scroll instead of widening the card */
+   size instead of scaling up with the card; #interestCard is its own query
+   container (like .chart-card) so the tick-label steps track the tab panel */
+#interestCard {
+  min-width: 0; /* lets the 340px table scroll instead of widening the card */
+  container-type: inline-size;
+}
 
 #breakdownCard .chart-wrap,
 #interestCard .chart-wrap {
@@ -687,11 +724,16 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
    The tip must stay laid out even while it is "hidden": app.js reads
    tip.offsetParent to compute its coordinates, and offsetParent is null while
    display:none, which would misplace the very first hover by the chart's
-   viewport offset. Staying displayed but transparent keeps the maths right. */
+   viewport offset. Staying displayed but transparent keeps the maths right.
+   width:max-content keeps short tips on one line; the max-width caps the long
+   unified month strings so they wrap instead of widening the page (app.js also
+   clamps the left edge inside the viewport on every hover). */
 .chart-tip {
   position: absolute;
   z-index: 2;
   transform: translate(-50%, -115%);
+  width: max-content;
+  max-width: calc(100vw - 8px);
   padding: 8px 10px;
   border-radius: 6px;
   background: #1f2733;
@@ -699,7 +741,8 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   font-size: 12px;
   line-height: 1.35;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
   pointer-events: none;
   box-shadow: var(--shadow-pop);
 }
@@ -1086,6 +1129,45 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  cursor: help;
+}
+
+.fx-badge:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; border-radius: 4px; }
+
+/* badge + provenance popover anchored bottom-right above the footer line */
+.fx-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+}
+
+.fx-detail {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 4;
+  width: max-content;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #1f2733;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: left;
+  box-shadow: var(--shadow-pop);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .12s ease;
+}
+
+/* app.js fills #fxDetail; the native title covers hover, focusing the badge
+   (tabindex="0") reveals the full provenance line for keyboard users */
+.fx-badge:hover + .fx-detail,
+.fx-badge:focus-visible + .fx-detail {
+  opacity: 1;
+  visibility: visible;
 }
 
 /* ----------------------------------------------------------------- modal --- */
@@ -1103,6 +1185,26 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 }
 
 dialog::backdrop { background: rgba(21, 25, 40, .48); }
+
+/* app.js fallback for engines without <dialog>.showModal(): keep the opened
+   picker centred and dim the page, mirroring the native modal chrome */
+.modal--fallback[open] {
+  position: fixed;
+  inset: 0;
+  height: max-content;
+  margin: auto;
+  z-index: 101;
+}
+
+body.modal-fallback-open { overflow: hidden; }
+
+body.modal-fallback-open::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(21, 25, 40, .48);
+}
 
 .modal__title { font-size: 17px; }
 

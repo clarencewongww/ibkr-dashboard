@@ -761,22 +761,25 @@ const IBKR = (function () {
     // so only the hidden attribute flips them between visible and invisible.
     tip.textContent = text;
     tip.hidden = false;
+    const docW = typeof document !== 'undefined' && document.documentElement
+      ? document.documentElement.clientWidth : 0;
+    // Long unified tips wrap inside the viewport instead of widening the page.
+    if (docW) tip.style.maxWidth = Math.max(160, docW - 8) + 'px';
     const host = tip.offsetParent && tip.offsetParent.getBoundingClientRect ? tip.offsetParent : null;
     const base = host ? host.getBoundingClientRect() : { left: 0, top: 0 };
     const r = target.getBoundingClientRect();
-    let left = r.left - base.left + r.width / 2;
+    const left = r.left - base.left + r.width / 2;
+    const top = r.top - base.top;
     tip.style.left = left + 'px';
-    tip.style.top = (r.top - base.top) + 'px';
+    tip.style.top = top + 'px';
     // Keep the tip fully on screen: only bars near the edges shift, and only as far as
     // needed, so a tooltip can never extend the page's scrollWidth (the 375px smoke test).
-    if (tip.getBoundingClientRect && typeof document !== 'undefined' && document.documentElement) {
-      const docW = document.documentElement.clientWidth;
+    if (docW && tip.getBoundingClientRect) {
       const box = tip.getBoundingClientRect();
-      const overRight = box.right - (docW - 4);
-      const overLeft = 4 - box.left;
-      if (overRight > 0 && box.width <= docW - 8) left -= overRight;
-      else if (overLeft > 0) left += overLeft;
-      if (overRight > 0 || overLeft > 0) tip.style.left = Math.max(0, left) + 'px';
+      const dx = box.left < 4 ? 4 - box.left : box.right > docW - 4 ? docW - 4 - box.right : 0;
+      const dy = box.top < 4 ? 4 - box.top : 0;
+      if (dx) tip.style.left = left + dx + 'px';
+      if (dy) tip.style.top = top + dy + 'px';
     }
   }
   function hideTipFor(tip) { if (tip) tip.hidden = true; } // stays laid out, styles.css fades it out
@@ -787,6 +790,25 @@ const IBKR = (function () {
     const t = e.target;
     return t && t.getAttribute && t.getAttribute('data-tip') ? t : null;
   }
+  /**
+   * Keep an absolutely positioned popover (right-anchored by CSS) inside the
+   * viewport. Called on the anchor's reveal events, so it only ever nudges the
+   * popover's `right` offset: negative moves it right, positive moves it left.
+   * Used by #basisHelp (.info-tip) and #fxDetail (.fx-detail).
+   */
+  function clampPopover(anchor, popover) {
+    if (!anchor || !popover || !popover.getBoundingClientRect) return;
+    if (typeof document === 'undefined' || !document.documentElement) return;
+    popover.style.right = '0';
+    const docW = document.documentElement.clientWidth;
+    const box = popover.getBoundingClientRect();
+    const overLeft = 4 - box.left;
+    const overRight = box.right - (docW - 4);
+    if (overLeft > 0 && box.width <= docW - 8) popover.style.right = (-Math.ceil(overLeft)) + 'px';
+    else if (overRight > 0) popover.style.right = Math.ceil(overRight) + 'px';
+  }
+  function placeBasisTip() { clampPopover(byId('basisInfo'), byId('basisHelp')); }
+  function placeFxDetail() { clampPopover(byId('fxBadge'), byId('fxDetail')); }
 
   function renderChart(months) {
     const svg = byId('chartSvg');
@@ -1450,19 +1472,38 @@ const IBKR = (function () {
     }
   }
 
-  /** Open the picker: render fresh rows, show the native dialog, focus the search box. */
+  /** Open the picker: render fresh rows, show the dialog (modal or fallback), focus search. */
   function openTickerList() {
     renderTickerList();
     const dialog = pickById(TICKER_IDS.dialog);
-    if (!dialog || typeof dialog.showModal !== 'function') return;
+    if (!dialog) return;
     if (typeof document !== 'undefined' && document.activeElement) tickerReturnFocus = document.activeElement;
-    if (!dialog.open) dialog.showModal();
+    if (typeof dialog.showModal === 'function') {
+      if (!dialog.open) dialog.showModal();
+    } else {
+      // engines without showModal: the open attribute + .modal--fallback CSS stand in
+      dialog.setAttribute('open', '');
+      dialog.classList.add('modal--fallback');
+      if (typeof document !== 'undefined' && document.body) document.body.classList.add('modal-fallback-open');
+    }
     const search = pickById(TICKER_IDS.search);
     if (search && typeof search.focus === 'function') search.focus();
   }
+  /** True while the picker is open through the open-attribute fallback. */
+  function tickerFallbackOpen() {
+    const dialog = pickById(TICKER_IDS.dialog);
+    return !!(dialog && typeof dialog.showModal !== 'function' && dialog.hasAttribute('open'));
+  }
+  /** Close the picker; native close() fires the close event, the fallback unwinds by hand. */
   function closeTickerList() {
     const dialog = pickById(TICKER_IDS.dialog);
-    if (dialog && dialog.open && typeof dialog.close === 'function') { dialog.close(); return; }
+    const native = !!dialog && typeof dialog.showModal === 'function' && typeof dialog.close === 'function';
+    if (native && dialog.open) { dialog.close(); return; }
+    if (dialog) {
+      dialog.removeAttribute('open');
+      dialog.classList.remove('modal--fallback');
+      if (typeof document !== 'undefined' && document.body) document.body.classList.remove('modal-fallback-open');
+    }
     restoreTickerFocus(); // without a real <dialog> the close event never fires
     renderTickerList();
   }
@@ -1477,6 +1518,28 @@ const IBKR = (function () {
     const r = dialog.getBoundingClientRect();
     if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) return;
     dialog.close(); // click landed on ::backdrop
+  }
+  /**
+   * Keyboard fallback for shells that opened the picker via the open attribute:
+   * Esc closes it and Tab wraps between its first and last control. Native
+   * dialogs handle both themselves, so this stays idle whenever showModal exists.
+   */
+  function onDocumentKeydown(e) {
+    const key = e.key;
+    if (key === 'Escape') {
+      if (tickerFallbackOpen()) closeTickerList();
+      return;
+    }
+    if (key !== 'Tab' || !tickerFallbackOpen() || typeof document === 'undefined') return;
+    const dialog = pickById(TICKER_IDS.dialog);
+    const focusables = dialog && dialog.querySelectorAll
+      ? dialog.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')
+      : [];
+    if (!focusables.length) return;
+    const first = focusables[0], last = focusables[focusables.length - 1], active = document.activeElement;
+    const inside = !!(active && dialog.contains && dialog.contains(active));
+    if (e.shiftKey && (active === first || !inside)) { e.preventDefault(); if (last.focus) last.focus(); }
+    else if (!e.shiftKey && (active === last || !inside)) { e.preventDefault(); if (first.focus) first.focus(); }
   }
 
   /** Tab key for a button/panel: data-tab, aria-controls="tabX" or id="tabBtnX"/"tabX". */
@@ -1536,6 +1599,25 @@ const IBKR = (function () {
   }
   function onHashChange() { const name = hashTabName(); if (name) showTab(name, true); }
 
+  /** Roving-tablist arrow keys (Left/Right/Home/End) — Enter/Space stay native. */
+  function onTabsKeydown(e) {
+    const key = e.key;
+    if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'Home' && key !== 'End') return;
+    const target = e.target;
+    if (!target || !target.closest) return;
+    const btn = target.closest('[role="tab"]');
+    if (!btn) return;
+    const tabs = tabButtons();
+    if (tabs.length < 2) return;
+    const at = tabs.indexOf(btn);
+    if (at < 0) return;
+    const next = key === 'Home' ? 0 : key === 'End' ? tabs.length - 1
+      : (at + (key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+    e.preventDefault(); // arrows must not scroll the page
+    showTab(tabKeyOf(tabs[next]), false);
+    if (typeof tabs[next].focus === 'function') tabs[next].focus();
+  }
+
   /** Document-level delegation: tab buttons and any ticker-picker opener. */
   function onDocumentClick(e) {
     const target = e.target;
@@ -1543,7 +1625,9 @@ const IBKR = (function () {
     const tabBtn = target.closest('[data-tab], .tab, [role="tab"]');
     if (tabBtn) { showTab(tabKeyOf(tabBtn), false); return; }
     const openerSelector = '[data-open-tickers], ' + TICKER_IDS.openers.map(id => '#' + id).join(', ');
-    if (target.closest(openerSelector)) openTickerList();
+    if (target.closest(openerSelector)) { openTickerList(); return; }
+    // fallback dialog: a click anywhere outside the open picker dismisses it
+    if (tickerFallbackOpen() && !target.closest('.modal--fallback')) closeTickerList();
   }
 
   // ------------------------------------------------------------ listeners
@@ -1682,7 +1766,12 @@ const IBKR = (function () {
     listen(byId('yearSelect'), 'change', onYearChange);
     listen(byId('monthChips'), 'click', onChipClick);
     listen(byId('monthlyBody'), 'click', onRowClick);
+    // interest rows carry data-month too: the same click selects the month
+    listen(pickById(['interestBody', 'interestTableBody']), 'click', onRowClick);
     listen(byId('postedToggle'), 'change', renderAll);
+    // reveal-time edge clamp for the two footer/card popovers
+    listen(byId('basisInfo'), 'mouseenter', placeBasisTip);
+    listen(byId('basisInfo'), 'focusin', placeBasisTip);
     if (typeof document !== 'undefined' && document.querySelectorAll) {
       const toggles = document.querySelectorAll('input[name="currencyToggle"]');
       for (let i = 0; i < toggles.length; i++) listen(toggles[i], 'change', onCurrencyChange);
@@ -1713,11 +1802,17 @@ const IBKR = (function () {
       listen(tickerDialog, 'close', onTickerDialogClose);
       listen(tickerDialog, 'click', onTickerDialogClick);
     }
-    if (typeof document !== 'undefined') listen(document, 'click', onDocumentClick);
+    if (typeof document !== 'undefined') {
+      listen(document, 'click', onDocumentClick);
+      listen(document, 'keydown', onDocumentKeydown);
+      listen(document, 'keydown', onTabsKeydown);
+    }
     if (typeof window !== 'undefined') listen(window, 'hashchange', onHashChange);
     onHashChange(); // deep link (#interest, …) selects a tab on load
     listen(byId('fxInput'), 'change', onFxInputChange);
     listen(byId('fxReset'), 'click', onFxResetClick);
+    listen(byId('fxBadge'), 'mouseenter', placeFxDetail);
+    listen(byId('fxBadge'), 'focusin', placeFxDetail);
     syncFxInput();
     const label = byId('fileLabel');
     if (label && !label.textContent.trim() && !hasData()) setFileLabel('No file selected');

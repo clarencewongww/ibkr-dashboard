@@ -49,7 +49,8 @@
              #tickerModal <dialog> · #tickerSearch filter input · #tickerList is a DIV and
              receives label.ticker-row rows (symbol · P&L · include/exclude checkboxes) ·
              #tickerApply / #tickerClear / #tickerClose buttons. app.js calls
-             showModal()/close(); Esc/backdrop are native. .ticker-list/.ticker-row styles
+             showModal()/close(); Esc/backdrop are native (an open-attribute fallback
+             takes over when showModal is unavailable). .ticker-list/.ticker-row styles
              live in styles.css.
              #includeChips — same chip contract as #excludeChips (button.chip[data-ticker],
              aria-pressed="true"; click removes the include); #includeWrap groups the
@@ -57,7 +58,8 @@
   Basis      #postedToggle  fieldset; radios name="postedToggle" value="posted"|"accrual".
              app.js listens for "change" on the fieldset (radios bubble) and reads
              input[name="postedToggle"]:checked → value "accrual" = accrual interest.
-             #basisInfo — round "i" button · #basisHelp — the text it describes
+             #basisInfo is the round "i" button; #basisHelp (.info-tip) holds the
+             Posted/Accrual text, revealed on #basisInfo hover / focus-visible
   KPI        values #kpiNet #kpiMonth #kpiBest #kpiAvg  ("—" while empty)
              deltas #kpiNetDelta #kpiMonthDelta #kpiBestDelta #kpiAvgDelta
                     (app.js rewrites className to "delta delta--up|down|flat")
@@ -81,8 +83,11 @@
              and reads input[name="currencyToggle"]:checked.
              #fxInput  manual USD/AUD rate (text + inputmode=decimal; empty = automatic)
              #fxReset  button → back to the automatic rate
-             #fxBadge  footer status text ("FX: live · <date>" / "FX: manual" / "FX: …")
-             #fxDetail visually hidden · app.js fills it with the full source detail
+             #fxBadge  footer status text ("FX: live · <date>" / "FX: manual" / "FX: …");
+                        focusable — hover shows its title, focus reveals the #fxDetail
+                        tooltip via .fx-wrap (app.js writes both)
+             #fxDetail app.js fills it with the full source detail; .fx-detail is the
+                        footer tooltip, hidden until #fxBadge is hovered or focused
   Exclude    #excludeInput  free-text tickers, comma separated ("AMD, NVDA")
              #excludeChips  receives button.chip[data-ticker][aria-pressed] elements;
                             aria-pressed="true" = ticker is excluded from every aggregate
@@ -330,7 +335,7 @@
             </fieldset>
             <button id="basisInfo" class="info" type="button"
                     aria-describedby="basisHelp" aria-label="About Posted vs Accrual">i</button>
-            <span id="basisHelp" class="visually-hidden">Posted = cash settled as booked. Accrual = estimate from Accruals spread per-day; ignored if no IACC.</span>
+            <span id="basisHelp" class="info-tip" role="tooltip">Posted = cash settled as booked. Accrual = estimate from Accruals spread per-day; ignored if no IACC.</span>
           </div>
         </div>
 
@@ -523,15 +528,20 @@
     <p class="site-footer__meta">
       <a class="site-footer__link" href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer">Rates By Exchange Rate API</a>
       <span class="site-footer__sep" aria-hidden="true">·</span>
-      <span id="fxBadge" class="fx-badge" aria-live="polite" title="FX source and applied rate">FX: loading</span>
-      <span id="fxDetail" class="visually-hidden"></span>
+      <!-- #fxBadge is focusable: hover shows the native title, focus reveals #fxDetail -->
+      <span class="fx-wrap">
+        <span id="fxBadge" class="fx-badge" aria-live="polite" tabindex="0"
+              aria-describedby="fxDetail" title="FX source and applied rate">FX: loading</span>
+        <span id="fxDetail" class="fx-detail"></span>
+      </span>
     </p>
   </div>
 </footer>
 
 <!-- Ticker picker (shell): app.js fills #tickerList, filters it with #tickerSearch
      and writes the picked set into #includeChips. Native <dialog> — app.js calls
-     showModal()/close(); Esc and backdrop clicks are the browser's job. -->
+     showModal()/close(); Esc, focus trapping and backdrop clicks are the browser's job,
+     with an app.js open-attribute fallback for engines without showModal. -->
 <dialog id="tickerModal" class="modal" aria-labelledby="tickerModalTitle">
   <h2 class="modal__title" id="tickerModalTitle">Tickers</h2>
   <label class="visually-hidden" for="tickerSearch">Filter tickers</label>
