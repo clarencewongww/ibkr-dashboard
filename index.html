@@ -60,10 +60,14 @@
              app.js listens for "change" on the fieldset (radios bubble) and reads
              input[name="postedToggle"]:checked → value "accrual" = accrual interest.
              #basisInfo is the round "i" button; #basisHelp (.info-tip) holds the
-             Posted/Accrual text, revealed on #basisInfo hover / focus-visible
+             Posted/Accrual text, revealed on #basisInfo hover / focus-visible.
+             The .info + .info-tip pair is shared: #incomeInfo/#incomeHelp in the
+             breakdown legend uses the same CSS reveal and #basisInfo's clamp helper.
   KPI        values #kpiNet #kpiMonth #kpiBest #kpiAvg  ("—" while empty)
              deltas #kpiNetDelta #kpiMonthDelta #kpiBestDelta #kpiAvgDelta
-                    (app.js rewrites className to "delta delta--up|down|flat")
+                    (app.js rewrites className to "delta delta--up|down|flat";
+                     #kpiNetDelta also carries a title, "Income $… = Interest $… + Div $…",
+                     refreshed each render and untouched by setDelta)
              subs   #kpiMonthSub #kpiBestSub (month name)
   Month bar  #monthChips receives button.chip[data-month][aria-pressed] elements
              — .is-active / [aria-pressed="true"] is the selected state
@@ -94,6 +98,10 @@
   Breakdown  #breakdownCard  card shell · #breakdownSvg — 720x300 viewBox, same contract
              as #chartSvg (app.js re-declares the viewBox and draws .chart primitives)
              #breakdownTip — same hidden/[hidden] contract as #chartTip
+             legend gold "Interest + Div" row is .legend__item--info (position: relative)
+             and carries #incomeInfo (button.info, aria-describedby) + #incomeHelp
+             (.info-tip) — hover/focus reveals the Income split; app.js clamps it
+             with placeIncomeTip (the #basisInfo pattern)
   States     #emptyState — app.js sets hidden + inline display:none once data loads;
              the dashed #dropZone then collapses via :has() in styles.css
              #errorBox — hidden by default, role="alert"; app.js writes .js-error-text
@@ -419,7 +427,12 @@
         <ul class="legend">
           <li class="legend__item"><span class="legend__dot legend__dot--opt" aria-hidden="true"></span>Options</li>
           <li class="legend__item"><span class="legend__dot legend__dot--stock" aria-hidden="true"></span>Stock</li>
-          <li class="legend__item"><span class="legend__dot legend__dot--int" aria-hidden="true"></span>Interest + Div</li>
+          <li class="legend__item legend__item--info">
+            <span class="legend__dot legend__dot--int" aria-hidden="true"></span>Interest + Div
+            <button id="incomeInfo" class="info" type="button"
+                    aria-describedby="incomeHelp" aria-label="About Income">i</button>
+            <span id="incomeHelp" class="info-tip" role="tooltip">Income = Interest + Dividends (plus Withholding + Fees netted). Gold segment shows Interest $ + Div $.</span>
+          </li>
         </ul>
       </section>
 

@@ -560,9 +560,10 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 .info:hover { border-color: var(--teal); color: var(--teal-dark); }
 
-/* #basisHelp — the Posted vs Accrual explanation, shown as a popover on
-   hover/focus instead of being visually hidden text. It stays in the a11y tree
-   (opacity, not display) and #basisInfo points at it with aria-describedby. */
+/* .info-tip — the explanation popover shared by #basisInfo (Posted vs Accrual) and
+   #incomeInfo (Interest + Div legend). It stays laid out (opacity, not display) and
+   each .info button points at its own tip with aria-describedby. The anchor must be
+   position: relative (.card__head-actions / .legend__item--info). */
 .info-tip {
   position: absolute;
   top: calc(100% + 8px);
@@ -586,8 +587,10 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   transition: opacity .12s ease;
 }
 
-#basisInfo:hover + .info-tip,
-#basisInfo:focus-visible + .info-tip {
+/* Generic reveal: works for #basisInfo and #incomeInfo (both are .info buttons with
+   an adjacent .info-tip). The old id-specific rule is intentionally folded in here. */
+.info:hover + .info-tip,
+.info:focus-visible + .info-tip {
   opacity: 1;
   visibility: visible;
 }
@@ -813,6 +816,9 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 }
 
 .legend__item { display: inline-flex; align-items: center; gap: 8px; }
+
+/* Anchors the #incomeHelp .info-tip popover inside the legend row. */
+.legend__item--info { position: relative; }
 
 .legend__dot {
   width: 10px;

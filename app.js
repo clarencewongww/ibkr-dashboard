@@ -18,6 +18,7 @@
  * fxInput fxReset, plus the optional
  * input[name="currencyToggle"] USD/AUD switch, the interest card (interestSvg
  * interestTip kpiIntTotal kpiIntAvgDay kpiIntBest kpiIntShare interestBody),
+ * incomeInfo incomeHelp (the breakdown legend .info/.info-tip pair),
  * the ticker picker (tickerModal tickerSearch tickerList tickerApply tickerClear)
  * and the [data-tab]-driven Overview/Interest tabs. All of those are optional:
  * every lookup is null-safe so the script survives an older shell.
@@ -432,6 +433,8 @@ const IBKR = (function () {
   }
   const hasData = () => state.trades.length > 0 || state.cash.length > 0;
   function setText(id, text) { const el = byId(id); if (el) el.textContent = text; }
+  /** setTitle("#id", text) — independent of setDelta/setText so a tooltip survives text rewrites. */
+  function setTitle(id, text) { const el = byId(id); if (el) el.title = text || ''; }
   function setPickText(ids, text) { const el = pickById(ids); if (el) el.textContent = text; }
   function setDelta(id, text, dir) {
     const el = byId(id);
@@ -681,6 +684,7 @@ const IBKR = (function () {
       setText('kpiNet', '—'); setText('kpiMonth', '—'); setText('kpiBest', '—'); setText('kpiAvg', '—');
       setDelta('kpiNetDelta', 'Awaiting CSV'); setDelta('kpiMonthDelta', 'Awaiting CSV');
       setDelta('kpiBestDelta', 'Awaiting CSV'); setDelta('kpiAvgDelta', 'Awaiting CSV');
+      setTitle('kpiNetDelta', '');
       setText('kpiMonthSub', ''); setText('kpiBestSub', '');
       return;
     }
@@ -698,6 +702,8 @@ const IBKR = (function () {
     const income = incomeOf(sums);
     setText('kpiNet', fmtMoney(net));
     setDelta('kpiNetDelta', `Options ${fmtMoney(sums.options)} · Stock ${fmtMoney(sums.assign)} · Income ${fmtMoney(income)}`);
+    // Interest + Div breakdown of the Income figure; setDelta above only rewrites text/class.
+    setTitle('kpiNetDelta', incomeTipText(sums));
     setText('kpiMonth', fmtMoney(months[last].total));
     setDelta('kpiMonthDelta', mom == null ? 'MoM n/a' : `MoM ${mom >= 0 ? '+' : ''}${(mom * 100).toFixed(1)}%`, mom == null ? 'flat' : mom >= 0 ? 'up' : 'down');
     setText('kpiMonthSub', monthLabel(last));
@@ -720,6 +726,16 @@ const IBKR = (function () {
   function incomeOf(b) {
     return (Number(b.interest) || 0) + (Number(b.dividends) || 0) +
       (Number(b.withholding) || 0) + (Number(b.fees) || 0);
+  }
+
+  /**
+   * "Income $X = Interest $a + Div $b" — the #kpiNetDelta title and the gold segment's
+   * data-tip/<title>. X is incomeOf, so withholding + fees stay netted inside it while
+   * their component lines stay hidden by choice. Raw USD in; fmtMoney converts.
+   */
+  function incomeTipText(b) {
+    const m = b || {};
+    return `Income ${fmtMoney(incomeOf(m))} = Interest ${fmtMoney(m.interest)} + Div ${fmtMoney(m.dividends)}`;
   }
 
   /**
@@ -809,6 +825,7 @@ const IBKR = (function () {
     else if (overRight > 0) popover.style.right = Math.ceil(overRight) + 'px';
   }
   function placeBasisTip() { clampPopover(byId('basisInfo'), byId('basisHelp')); }
+  function placeIncomeTip() { clampPopover(byId('incomeInfo'), byId('incomeHelp')); }
   function placeFxDetail() { clampPopover(byId('fxBadge'), byId('fxDetail')); }
 
   function renderChart(months) {
@@ -887,7 +904,7 @@ const IBKR = (function () {
         key: k,
         total: Number(b.total) || 0,
         segs: BREAKDOWN_SERIES.map(s => ({
-          name: s.name, cls: s.cls, fill: s.fill,
+          key: s.key, name: s.name, cls: s.cls, fill: s.fill,
           value: s.key === 'income' ? incomeOf(b) : (Number(b[s.key]) || 0)
         }))
       };
@@ -923,7 +940,10 @@ const IBKR = (function () {
         if (s.value > 0) pos += s.value; else neg += s.value;
         const top = Math.min(y(from), y(from + s.value));
         const h = Math.max(1, Math.abs(y(from + s.value) - y(from)));
-        const tip = `${s.name} · ${monthTipText(st.key, months[st.key])}`;
+        // Options/Stock keep the unified month tip; the gold segment spells out its split.
+        const tip = s.key === 'income'
+          ? incomeTipText(months[st.key])
+          : `${s.name} · ${monthTipText(st.key, months[st.key])}`;
         out += `<rect class="bar ${s.cls}" x="${(cx(i) - barW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${barW}" height="${h.toFixed(1)}" rx="2" fill="${s.fill}" tabindex="0" data-tip="${esc(tip)}"><title>${esc(tip)}</title></rect>`;
       }
       out += `<text class="label" x="${cx(i).toFixed(1)}" y="${H - 16}" text-anchor="middle">${MONTH_NAMES[+st.key.slice(5, 7) - 1] || st.key}${multiYear ? " '" + st.key.slice(2, 4) : ''}</text>`;
@@ -1760,9 +1780,12 @@ const IBKR = (function () {
     // interest rows carry data-month too: the same click selects the month
     listen(pickById(['interestBody', 'interestTableBody']), 'click', onRowClick);
     listen(byId('postedToggle'), 'change', renderAll);
-    // reveal-time edge clamp for the two footer/card popovers
+    // reveal-time edge clamp for the card/footer/legend popovers
     listen(byId('basisInfo'), 'mouseenter', placeBasisTip);
     listen(byId('basisInfo'), 'focusin', placeBasisTip);
+    // legend popover: same clamp-on-reveal pattern as #basisInfo
+    listen(byId('incomeInfo'), 'mouseenter', placeIncomeTip);
+    listen(byId('incomeInfo'), 'focusin', placeIncomeTip);
     if (typeof document !== 'undefined' && document.querySelectorAll) {
       const toggles = document.querySelectorAll('input[name="currencyToggle"]');
       for (let i = 0; i < toggles.length; i++) listen(toggles[i], 'change', onCurrencyChange);
@@ -1825,7 +1848,7 @@ const IBKR = (function () {
   return {
     parseCsv, detectFormat, parseFlex, parseActivityStatement, parseCsvText,
     aggregateByMonth, classify, cashCategory, isAssignmentCode, monthKey, monthLabel, rootOf,
-    fmtMoney, fmtCompact, disp, currencyMode, init, loadText, clearAll, renderAll, renderBreakdown, incomeOf, state,
+    fmtMoney, fmtCompact, disp, currencyMode, init, loadText, clearAll, renderAll, renderBreakdown, incomeOf, incomeTipText, state,
     getExclude, setExclude, getInclude, setInclude,
     monthTipText, renderInterest, rankedRoots,
     renderTickerList, applyTickerList, clearTickerList, openTickerList, closeTickerList, showTab,

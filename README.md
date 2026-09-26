@@ -78,12 +78,18 @@ The **Income breakdown** card stacks each month into three colored segments:
 | --- | --- | --- |
 | **Options** | green | Option and future-option trades. |
 | **Stock** | indigo | Stock/ETF trades, including assignment and exercise legs. |
-| **Income** | gold | Interest + dividends + withholding + fees, combined. |
+| **Income** | gold | Interest + dividends + withholding + fees, combined (the legend calls it **Interest + Div**). |
 
 The full split stays **Total = options + assignment + interest + dividends + withholding + fees**,
 so the stack height matches the month's total whenever the segments share a sign. Positive and
 negative segments are drawn on opposite sides of the zero line independently. Hover or focus a
-segment for its exact value and share of the month's net.
+segment for its exact value and share of the month's net; the gold **Income** segment instead
+spells out `Income $X = Interest $a + Div $b` (withholding/fees stay netted inside `X`).
+
+The legend's **Interest + Div** row carries a round **i** button (`#incomeInfo` → `#incomeHelp`).
+Hover or focus it for the definition — *Income = Interest + Dividends (plus Withholding + Fees
+netted)*. The **Net P&L** KPI delta carries the same `Income $X = Interest $a + Div $b` breakdown
+as a title. Both views convert at render time with the active USD/AUD switch.
 
 ### Interest tab
 
@@ -204,7 +210,7 @@ memory; nothing is rewritten.
 
 | Path | Role |
 | --- | --- |
-| `index.html` | Markup contract: header, month/year chips, chart cards, table, `#postedToggle`, `#tickerBtn` / `#tickerSearchClear` / `#filterNote` / `#toTopTickers`, `#fxInput` / `#fxReset` / `#fxBadge`, `#clearBtn`, file input. |
+| `index.html` | Markup contract: header, month/year chips, chart cards, table, `#postedToggle`, `#tickerBtn` / `#tickerSearchClear` / `#filterNote` / `#toTopTickers`, `#fxInput` / `#fxReset` / `#fxBadge`, legend income popover `#incomeInfo` / `#incomeHelp`, `#clearBtn`, file input. |
 | `styles.css` | All styling and design tokens (CSS custom properties in `:root`); no external assets. |
 | `app.js` | CSV parser (Flex + Activity Statement), month aggregation, root-symbol exclude filter, USD/AUD rate chain, rendering. Exposes `window.IBKR` for debugging. |
 | `data/` | Your local IBKR exports and scratch space (gitignored). |
