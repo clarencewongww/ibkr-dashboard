@@ -3,8 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- FX rates are requested from a public endpoint only when the user switches to AUD;
-     no-referrer keeps this page's URL (and any query string) out of that request. -->
+<!-- FX rate auto-refreshes on each CSV load (fixed URL, currency codes only, no portfolio data;
+     manual override disables network). no-referrer keeps this page's URL (and any query string)
+     out of that request. -->
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#151928">
@@ -410,7 +411,7 @@
 
 <footer class="site-footer">
   <div class="container site-footer__inner">
-    <p class="site-footer__note">Your statement is parsed in this browser. Only when you switch to AUD does the page request one public USD&rarr;AUD rate — no statement data is ever sent.</p>
+    <p class="site-footer__note">Your statement is parsed in this browser. The FX rate auto-refreshes on each CSV load (fixed URL, currency codes only, no portfolio data; manual override disables network).</p>
     <p class="site-footer__meta">
       <a class="site-footer__link" href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer">Rates By Exchange Rate API</a>
       <span class="site-footer__sep" aria-hidden="true">·</span>
