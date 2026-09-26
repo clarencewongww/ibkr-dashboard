@@ -38,12 +38,12 @@ understands this Activity-Statement layout (it keys off the `Trades` / cash sect
 
 ### Option A — one-click launcher (kills the old server first)
 
-Double-click **`Start-Dashboard.app`**, or run `./Start-Dashboard.sh` from Terminal. The launcher
+Double-click **`IBKR P&L Dashboard.app`**, or run `./Start-Dashboard.sh` from Terminal. The launcher
 kills whatever is listening on port 8000, starts `python3 -m http.server` bound to **127.0.0.1**,
 waits for `http://127.0.0.1:8000/index.html` to answer, then opens it. The server is detached, so
 nothing has to stay open after the page appears.
 
-- **First launch only (Gatekeeper):** right-click `Start-Dashboard.app` → **Open** → **Open**. The
+- **First launch only (Gatekeeper):** right-click `IBKR P&L Dashboard.app` → **Open** → **Open**. The
   bundle is signed locally (ad-hoc), so plain double-click works from then on.
 - **Stop it manually:** `lsof -ti:8000 -sTCP:LISTEN | xargs kill`.
 
@@ -250,7 +250,7 @@ memory; nothing is rewritten.
 | `styles.css` | All styling and design tokens (CSS custom properties in `:root`); no external assets. |
 | `app.js` | CSV parser (Flex + Activity Statement), month aggregation, root-symbol include/exclude filter with per-kind scopes, session-only asset filter, USD/AUD rate chain, rendering. Exposes `window.IBKR` for debugging. |
 | `Start-Dashboard.sh` | Kill-then-start launcher: frees port 8000, serves this folder on **127.0.0.1** and opens the page. |
-| `Start-Dashboard.app` | Double-click wrapper around `Start-Dashboard.sh`; no Terminal window (right-click **Open** on first launch only). |
+| `IBKR P&L Dashboard.app` | Double-click wrapper around `Start-Dashboard.sh`; no Terminal window (right-click **Open** on first launch only). |
 | `data/` | Your local IBKR exports and scratch space (gitignored). |
 | `.gitignore` | Keeps `*.csv`, `data/*` and env/log noise out of git. |
 | `README.md` | This file. |
@@ -286,7 +286,7 @@ workers need http/https, so always install from the launcher's URL, not from a F
 
 ### Install (Brave)
 
-1. Start the dashboard with **`Start-Dashboard.app`** (or `./Start-Dashboard.sh`) so the page is open
+1. Start the dashboard with **`IBKR P&L Dashboard.app`** (or `./Start-Dashboard.sh`) so the page is open
    at `http://127.0.0.1:8000/index.html`.
 2. Brave menu → **Cast, save, and share** → **Install page as app…** (older builds: *Save and share →
    Install…*, or the install icon in the omnibox). Name it **IBKR P&L** and confirm.
@@ -295,11 +295,17 @@ workers need http/https, so always install from the launcher's URL, not from a F
 4. Launch it from Launchpad/Applications as usual — it opens standalone, without browser chrome, and
    still opens when the local server is down (next section).
 
+> **Already installed from an earlier build?** The PWA icons changed, but an existing install keeps
+> its cached copies. Remove the old **IBKR P&L** app in **`brave://apps`** (its bundle also sits under
+> `~/Applications/Brave Browser Apps.localized/`), then install it again from
+> `http://127.0.0.1:8000/index.html` so the new icons are picked up. If the old icon lingers in the
+> Dock, remove that Dock tile and re-add the freshly installed app — the Dock caches icons per bundle.
+
 ### Offline behaviour (service worker)
 
 `sw.js` registers when the page is served over http(s) and caches **only the static shell** —
 `index.html`, `styles.css`, `app.js`, `manifest.webmanifest` and the icons — in cache
-**`ibkr-shell-v1`**. It is network-first: fresh files win while the server is up; if the server is
+**`ibkr-shell-v2`**. It is network-first: fresh files win while the server is up; if the server is
 down, the cached shell is served instead, so the installed app still opens and renders (statement
 data still comes from the in-page state / `localStorage` as before). **CSV files, `/data/*` and the
 cross-origin FX lookups are never intercepted and never cached** — statement data stays out of
@@ -307,7 +313,7 @@ CacheStorage exactly as it stays out of the network, and old shell caches are pu
 
 ### Launcher modes
 
-`Start-Dashboard.sh` / `Start-Dashboard.app` open the page in this order and log the mode they used
+`Start-Dashboard.sh` / `IBKR P&L Dashboard.app` open the page in this order and log the mode they used
 (both to stdout and to the server log):
 
 | Mode | What opens |

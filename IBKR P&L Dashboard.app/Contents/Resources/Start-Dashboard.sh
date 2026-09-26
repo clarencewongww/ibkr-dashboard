@@ -2,13 +2,13 @@
 set -eu
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DIR="$SCRIPT_DIR"
-# The same script is copied into Start-Dashboard.app/Contents/Resources; when the
-# bundle launches it, climb to the project folder that holds index.html.
+# The same script is copied into IBKR P&L Dashboard.app/Contents/Resources; when
+# the bundle launches it, climb to the project folder that holds index.html.
 while [ "$DIR" != "/" ] && [ ! -f "$DIR/index.html" ]; do
   DIR="$(dirname "$DIR")"
 done
 if [ ! -f "$DIR/index.html" ]; then
-  echo "index.html not found above $SCRIPT_DIR - keep Start-Dashboard.app in the dashboard folder" >&2
+  echo "index.html not found above $SCRIPT_DIR - keep 'IBKR P&L Dashboard.app' in the dashboard folder" >&2
   exit 1
 fi
 PORT=8000
