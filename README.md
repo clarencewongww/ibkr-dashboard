@@ -275,3 +275,47 @@ git status --short
 Manual smoke test: open the page → choose the CSV → the newest month's total should match
 `Realized P/L` for that month in the file; toggling **Posted ↔ Accrual** should change the interest
 bucket only when an Interest Accruals section is present.
+
+---
+
+## 7. Install as an app (PWA) & launcher modes
+
+The dashboard is a PWA. Served from the canonical origin **http://127.0.0.1:8000** (the launcher),
+Chromium browsers can install it as a chromeless app window. `file://` cannot install — service
+workers need http/https, so always install from the launcher's URL, not from a Finder double-click.
+
+### Install (Brave)
+
+1. Start the dashboard with **`Start-Dashboard.app`** (or `./Start-Dashboard.sh`) so the page is open
+   at `http://127.0.0.1:8000/index.html`.
+2. Brave menu → **Cast, save, and share** → **Install page as app…** (older builds: *Save and share →
+   Install…*, or the install icon in the omnibox). Name it **IBKR P&L** and confirm.
+3. Manage or remove installed apps from **`brave://apps`**; their bundles also live under
+   `~/Applications/Brave Browser Apps.localized/`.
+4. Launch it from Launchpad/Applications as usual — it opens standalone, without browser chrome, and
+   still opens when the local server is down (next section).
+
+### Offline behaviour (service worker)
+
+`sw.js` registers when the page is served over http(s) and caches **only the static shell** —
+`index.html`, `styles.css`, `app.js`, `manifest.webmanifest` and the icons — in cache
+**`ibkr-shell-v1`**. It is network-first: fresh files win while the server is up; if the server is
+down, the cached shell is served instead, so the installed app still opens and renders (statement
+data still comes from the in-page state / `localStorage` as before). **CSV files, `/data/*` and the
+cross-origin FX lookups are never intercepted and never cached** — statement data stays out of
+CacheStorage exactly as it stays out of the network, and old shell caches are purged on activate.
+
+### Launcher modes
+
+`Start-Dashboard.sh` / `Start-Dashboard.app` open the page in this order and log the mode they used
+(both to stdout and to the server log):
+
+| Mode | What opens |
+| --- | --- |
+| **Installed app window** | The first `*.app` under `~/Applications/Brave Browser Apps.localized/` whose `CrAppModeShortcutURL` starts with `http://127.0.0.1:8000` — i.e. the installed PWA. |
+| **Brave app window** | `Brave Browser --app=http://127.0.0.1:8000/index.html` on the default profile (chromeless), backgrounded by the launcher. |
+| **Brave via `open -a`** | `open -a "Brave Browser" --args --app=…` when the binary isn't at `/Applications` but LaunchServices knows the app. |
+| **Default browser** | Plain `open http://127.0.0.1:8000/index.html` when no Brave install is found. |
+
+Install the PWA once and every later launch goes straight to the app window.
+

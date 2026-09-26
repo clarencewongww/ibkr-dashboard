@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="512" height="512" role="img" aria-label="IBKR Realised P&amp;L">
+  <rect width="24" height="24" rx="5" fill="#151928"/>
+  <g fill="none" stroke="#4FD1C5" stroke-width="2" stroke-linecap="round">
+    <path d="M6 19v-5"/>
+    <path d="M12 19V6"/>
+    <path d="M18 19v-8"/>
+  </g>
+</svg>
