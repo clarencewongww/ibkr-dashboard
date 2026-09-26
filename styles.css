@@ -144,10 +144,62 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 .split { display: grid; gap: var(--gap); }
 
+/* ----------------------------------------------------------------- tabs --- */
+/* page-level view switcher — same pill language as .segmented */
+.tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  justify-self: start;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.tab {
+  min-height: 34px;
+  padding: 5px 18px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease, box-shadow .15s ease;
+}
+
+.tab:hover { color: var(--ink); }
+
+.tab[aria-selected="true"] {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(21, 25, 40, .12);
+}
+
+/* the page grid stacks the panels; [hidden] (with !important) wins over this */
+.tabpanel {
+  display: grid;
+  gap: var(--gap);
+  min-width: 0;
+}
+
 .kpis {
   display: grid;
   gap: var(--gap);
   grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
+}
+
+/* compact KPI row for the interest tab — 2x2 on phones, 4-up from tablet size
+   (the min-width:960 .kpis rule later in this file also lands on 4-up) */
+.kpis--mini {
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 18px;
+}
+
+@media (min-width: 720px) {
+  .kpis--mini { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 /* ----------------------------------------------------------------- hero --- */
@@ -156,7 +208,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   overflow: hidden;
   background: var(--hero);
   color: #fff;
-  padding-block: 30px 34px;
+  padding-block: 18px 20px; /* compact: controls live in .toolbar now */
 }
 
 .hero::after {
@@ -172,8 +224,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   z-index: 1;
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
+  align-items: center;
   gap: var(--gap);
 }
 
@@ -200,17 +251,8 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 .hero__copy { min-width: 0; }
 
-.hero__eyebrow {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--teal);
-  margin-bottom: 4px;
-}
-
 .hero__title {
-  font-size: clamp(24px, 3.4vw, 32px);
+  font-size: clamp(20px, 2.8vw, 24px);
   color: #fff;
 }
 
@@ -219,13 +261,6 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   max-width: 62ch;
   font-size: 14.5px;
   color: rgba(255, 255, 255, .72);
-}
-
-.hero__controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 16px 20px;
 }
 
 .field { display: grid; gap: 6px; }
@@ -338,6 +373,64 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 .fx-row { display: flex; align-items: center; gap: 8px; }
 
+/* -------------------------------------------------------------- toolbar --- */
+/* Import + view controls, moved off the dark hero onto the light surface.
+   The hero-flavoured rules above (white labels, ghost buttons, inverted FX
+   input) are scoped back to the toolbar here; ids are unchanged. */
+.toolbar {
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  padding-block: 12px;
+}
+
+.toolbar__inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.toolbar .field__label { color: var(--muted); }
+
+.toolbar .btn--ghost {
+  border-color: var(--border);
+  color: var(--ink);
+}
+
+.toolbar .btn--ghost:hover:not([disabled]) {
+  background: var(--surface);
+  border-color: var(--muted);
+}
+
+.toolbar .field--fx .input {
+  border-color: var(--border);
+  background: var(--card);
+  color: var(--ink);
+}
+
+.toolbar .field--fx .input::placeholder { color: var(--muted); }
+.toolbar .field--fx .input:hover { border-color: var(--muted); }
+
+.toolbar .file-label { color: var(--muted); }
+
+/* include tickers: the Tickers (n) modal button beside the applied chips */
+.include-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.include-row .btn { flex: none; white-space: nowrap; }
+
+#includeWrap {
+  flex: 1 1 260px;
+  max-width: 420px;
+  min-width: 0;
+}
+
+#includeWrap .chips { margin-bottom: 0; }
+
 .file-label {
   max-width: 200px;
   overflow: hidden;
@@ -421,6 +514,36 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 .card__head--lead { justify-content: flex-start; }
 .card__head--lead .card__icon { margin-top: 2px; }
 
+/* card-head action cluster (basis toggle + its info button) */
+.card__head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+/* round help button — 20px, mirrors the icon-button language */
+.info {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  font-style: normal;
+  line-height: 1;
+  cursor: help;
+}
+
+.info:hover { border-color: var(--teal); color: var(--teal-dark); }
+
 .card__title { font-size: 17px; color: var(--ink); }
 
 .card__sub {
@@ -499,12 +622,27 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 .kpi__sub { color: var(--muted); }
 
+/* compact KPI cards for the interest tab (4-up mini summary) */
+.kpis--mini > .kpi {
+  padding: 14px;
+  gap: 4px;
+}
+
+.kpi--mini .kpi__label { padding-top: 0; }
+.kpi--mini .kpi__value {
+  font-size: 20px;
+  overflow-wrap: anywhere;
+}
+
 /* ---------------------------------------------------------------- chart --- */
 .chart-card { min-width: 0; }
 
-/* the breakdown card spans the page, so the 720x300 chart keeps a sane size
-   instead of scaling up to the full card width on a 1440px display */
-#breakdownCard .chart-wrap {
+/* the breakdown card sits in the 2x2 split, so the 720x300 chart keeps a sane
+   size instead of scaling up with the card */
+#interestCard { min-width: 0; } /* lets the 340px table scroll instead of widening the card */
+
+#breakdownCard .chart-wrap,
+#interestCard .chart-wrap {
   max-width: 760px;
   margin-inline: auto;
 }
@@ -513,7 +651,8 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 /* app.js draws the breakdown bars; until it has, the card shows a hint instead
    of an empty 720x300 box (:empty retires this rule on the first render) */
-#breakdownCard .chart-wrap:has(#breakdownSvg:empty)::after {
+#breakdownCard .chart-wrap:has(#breakdownSvg:empty)::after,
+#interestCard .chart-wrap:has(#interestSvg:empty)::after {
   content: "Load a CSV to see the income mix";
   position: absolute;
   inset: 0;
@@ -524,6 +663,10 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   color: var(--muted);
   font-size: 13px;
   pointer-events: none;
+}
+
+#interestCard .chart-wrap:has(#interestSvg:empty)::after {
+  content: "Load a CSV to see interest by month";
 }
 
 .chart-wrap {
@@ -562,14 +705,16 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 }
 
 #chartTip,
-#breakdownTip {
+#breakdownTip,
+#interestTip {
   display: block !important; /* stays laid out so offsetParent is never null */
   opacity: 0;
   visibility: hidden;
 }
 
 #chartTip:not([hidden]),
-#breakdownTip:not([hidden]) {
+#breakdownTip:not([hidden]),
+#interestTip:not([hidden]) {
   opacity: 1;
   visibility: visible;
 }
@@ -758,7 +903,8 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 /* graceful empty states without a line of JS */
 .table-card:has(#monthlyBody:empty) .table-placeholder,
-.table-card:has(#drillBody:empty) .table-placeholder { display: block; }
+.table-card:has(#drillBody:empty) .table-placeholder,
+#interestCard:has(#interestBody:empty) .table-placeholder { display: block; }
 
 /* ------------------------------------------------- drop zone / states --- */
 .dropzone {
@@ -942,11 +1088,108 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   white-space: nowrap;
 }
 
-/* ---------------------------------------------------------- responsive --- */
-@media (min-width: 620px) {
-  .hero { padding-block: 34px 40px; }
+/* ----------------------------------------------------------------- modal --- */
+/* native <dialog>: app.js calls showModal()/close(); Esc and backdrop are free */
+.modal {
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--shadow-pop);
 }
 
+dialog::backdrop { background: rgba(21, 25, 40, .48); }
+
+.modal__title { font-size: 17px; }
+
+.modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* scroll lock behind the sheet; harmless in engines without :has() because
+   .modal already caps its own height */
+body:has(dialog[open]) { overflow: hidden; }
+
+.ticker-list {
+  display: grid;
+  gap: 4px;
+  max-height: min(320px, 50vh);
+  overflow-y: auto;
+  margin-top: 6px;
+}
+
+.ticker-list:empty::after {
+  content: "Load a CSV to pick tickers.";
+  color: var(--muted);
+  font-size: 13px;
+  padding-block: 6px;
+}
+
+/* column key for the rows app.js renders; retired while the list is empty */
+.ticker-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 4px 10px;
+  padding: 0 10px;
+  margin-top: 14px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.modal:has(#tickerList:empty) .ticker-head { display: none; }
+
+/* app.js rows: label.ticker-row = symbol · P&L · include/exclude checkboxes */
+.ticker-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  cursor: pointer;
+  transition: background-color .15s ease, border-color .15s ease;
+}
+
+.ticker-row:hover { background: var(--surface); border-color: var(--muted); }
+.ticker-row[hidden] { display: none; }
+
+.ticker-row__symbol {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.ticker-row__pnl { font-size: 12.5px; }
+
+.ticker-row__modes {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ticker-row__modes input {
+  margin: 0;
+  accent-color: var(--teal-dark);
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------- responsive --- */
 @media (min-width: 960px) {
   .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
@@ -957,7 +1200,6 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 }
 
 @media (max-width: 619px) {
-  .hero__controls { width: 100%; }
   .field { flex: 1 1 auto; }
   .field--load { flex-basis: 100%; }
   .field--fx { flex-basis: 100%; }
@@ -965,7 +1207,8 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   .file-label { max-width: 100%; order: 3; flex-basis: 100%; }
   .card { padding: 18px; }
   .dropzone { padding: 30px 18px; }
-  #breakdownCard .chart-wrap { max-width: 100%; }
+  #breakdownCard .chart-wrap,
+  #interestCard .chart-wrap { max-width: 100%; }
 }
 
 /* ------------------------------------------------------- reduced motion --- */
