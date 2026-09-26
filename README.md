@@ -68,11 +68,74 @@ Multiple files are concatenated; do not load overlapping periods twice or totals
 
 ---
 
-## 3. Privacy
+## 3. Breakdown, exclude & currency
 
-- **Zero network.** No CDN, no web fonts, no analytics, no external requests of any kind. The only
-  "http" strings in the source are XML namespaces inside inline `data:` SVG URIs, which are never
-  fetched. The app is `index.html` + `styles.css` + `app.js` and nothing else.
+### Breakdown
+
+The **Income breakdown** card stacks each month into three colored segments:
+
+| Segment | Color | Contents |
+| --- | --- | --- |
+| **Options** | green | Option and future-option trades. |
+| **Stock** | indigo | Stock/ETF trades, including assignment and exercise legs. |
+| **Income** | gold | Interest + dividends + withholding + fees, combined. |
+
+The full split stays **Total = options + assignment + interest + dividends + withholding + fees**,
+so the stack height matches the month's total whenever the segments share a sign. Positive and
+negative segments are drawn on opposite sides of the zero line independently. Hover or focus a
+segment for its exact value and share of the month's net.
+
+### Exclude
+
+**Exclude tickers** removes instruments from every aggregate — KPIs, both charts, the month table
+and the drill-down:
+
+- Type a ticker (or several, comma-separated: `AMD, NVDA`) and press Enter, or click a chip.
+- The chips row shows the **12 largest instruments by absolute P&L**, plus any excluded ticker
+  that isn't already listed, so an exclusion can always be undone. `aria-pressed` mirrors the state.
+- Matching is case-insensitive and uses the **root symbol**: OCC-style padded option symbols are
+  trimmed at the first space, so excluding `AMD` also hides `AMD   260220P00185000`.
+- The list persists in `localStorage` under **`ibkr-exclude-v1`** and survives refreshes.
+- Ticker-less cash rows (e.g. broker interest) are never excluded.
+- Excluding only hides instruments from the display; **concatenated files still double-count** if
+  you load overlapping periods — excluded or not, load each month once.
+
+### Currency
+
+The **USD / AUD** switch converts every money figure at render time. Amounts stay raw USD in
+memory; nothing is rewritten.
+
+- **Automatic rate.** Loading a CSV kicks off a background rate lookup (a fresh override or cache
+  short-circuits it), and selecting AUD retries when no rate has resolved yet. Providers are tried
+  in order:
+  1. **frankfurter** — `frankfurter.dev` v2 rate endpoint (primary; `GET /v2/rate/USD/AUD`)
+  2. **er-api** — `open.er-api.com` v6 latest rates (fallback)
+  3. **currency-api** — `@fawazahmed0/currency-api` via `cdn.jsdelivr.net` (second fallback)
+- **Cache.** A successful rate is cached in `localStorage` under **`fx-audusd-v1`** for **12 hours**.
+  After that it is refreshed; if every provider fails, the newest cached rate is used as `(stale)`.
+- **Network hygiene.** Each lookup is a plain `GET` of the provider's fixed URL — **only currency
+  codes are sent; your file, totals and statement data never leave the page and never appear in a
+  URL**. The page is marked `Referrer: no-referrer`, requests use `cache: 'no-store'`, and an
+  **`AbortController` 5-second timeout** caps each provider attempt.
+- **Manual override.** Entering a rate in **Rate USD/AUD** beats the automatic chain, is stored as
+  **`fx_override`**, and suppresses provider lookups entirely — **manual mode is zero-network**.
+  **Auto** clears the override and returns to the automatic chain.
+- **Offline.** With no override, no cache and no reachable provider, the app falls back to a baked
+  approximation of **1.423** USD→AUD (badge reads `FX: approximate`).
+- **Badge.** The footer always shows the applied source, the provider's rate date and the exact
+  rate (`FX: <source> · <date> · 1 USD=<rate> AUD`).
+- **Attribution.** The footer keeps the required rates attribution link to **Exchange Rate API**;
+  no statement data is requested by or sent to it.
+
+---
+
+## 4. Privacy
+
+- **No CDN, no fonts, no analytics.** The app is `index.html` + `styles.css` + `app.js` and nothing
+  else; every asset is inline or local, and `file://` use makes zero requests. The **only** optional
+  outbound calls are the fixed-URL USD→AUD rate lookups described in *Currency* above — nothing else
+  is ever requested, and your file is never uploaded. (The remaining `http` strings inside inline
+  `data:` SVG URIs are XML namespaces, which are never fetched.)
 - **Data stays in the browser.** Parsed results are cached in `localStorage` under the key **`ibkr-v1`**
   (only for files ≤ 2 MB) so a refresh doesn't lose your session. `Clear` in the header wipes the
   cache, the file input and all state.
@@ -86,24 +149,27 @@ Multiple files are concatenated; do not load overlapping periods twice or totals
 
 ---
 
-## 4. File map
+## 5. File map
 
 | Path | Role |
 | --- | --- |
-| `index.html` | Markup contract: header, month/year chips, chart cards, table, `#postedToggle`, `#clearBtn`, file input. |
+| `index.html` | Markup contract: header, month/year chips, chart cards, table, `#postedToggle`, `#excludeInput` / `#excludeChips`, `#fxInput` / `#fxReset` / `#fxBadge`, `#clearBtn`, file input. |
 | `styles.css` | All styling and design tokens (CSS custom properties in `:root`); no external assets. |
-| `app.js` | CSV parser (Flex + Activity Statement), month aggregation, rendering. Exposes `window.IBKR` for debugging. |
+| `app.js` | CSV parser (Flex + Activity Statement), month aggregation, root-symbol exclude filter, USD/AUD rate chain, rendering. Exposes `window.IBKR` for debugging. |
 | `csv/` | Your local IBKR exports (gitignored). |
 | `data/` | Scratch space for local data (gitignored). |
 | `.gitignore` | Keeps `*.csv`, `csv/*`, `data/*` and env/log noise out of git. |
 | `README.md` | This file. |
 
-## 5. Verify it yourself
+## 6. Verify it yourself
 
 ```bash
-# No outbound references should be printed by either grep:
-grep -nE "https?://|//cdn|@import|googleapis|fontawesome" index.html styles.css app.js
-# → only matches inside data: URIs (xmlns), which never make a request
+# Expected outbound URLs only: the footer attribution link (index.html) and the three
+# fixed FX provider endpoints (app.js). No data, no query strings, no CSV content:
+grep -rn "https://" README.md index.html
+grep -nE "https?://" app.js
+# → attribution + provider URLs only; every URL is a literal constant, and no user data
+#   is ever interpolated into one
 
 # Your CSV must be ignored by git:
 git check-ignore -v csv/Monthly_Realised_PnL.csv

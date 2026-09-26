@@ -17,3 +17,6 @@ csv/*
 !csv/.gitkeep
 *.csv
 *.CSV
+
+# Local tooling state (OpenChamber, editors)
+.openchamber/
