@@ -71,12 +71,15 @@
              .ticker-list/.ticker-row styles live in styles.css.
              #includeChips — chip contract: button.chip[data-ticker] with
              aria-pressed="true" (its label/title name the scope); click removes the
-             include. #includeWrap groups the Tickers button with those chips and
-             #filterNote (aria-live="polite" summary of the active ticker filters,
-             scopes included). Single-line contract: .include-row keeps chips on one
-             row and scrolls horizontally itself, #filterNote ellipsises long lists
-             and mirrors the full string into title=. .toolbar__inner wraps below
-             1180px and scrolls one slim row, keeping its thin scrollbar, from 1180px.
+             include. #includeWrap groups the Tickers button with those chips,
+             #includeMore ("+n") and #filterNote (aria-live="polite" summary of the
+             active ticker filters, scopes included). No-scrollbar contract: the
+             320px cluster never scrolls or wraps — .include-row/#includeChips clip
+             (overflow:hidden), app.js hides the chips that do not fit and counts
+             them in '+n' #includeMore (title = full list, click opens the picker);
+             #filterNote is 11px and ellipsises long lists, mirroring the full
+             string into title=. .toolbar__inner flex-wraps at every width (no
+             scroller, no hidden-scrollbar trick); the band keeps its height.
   Basis      #postedToggle  fieldset; radios name="postedToggle" value="posted"|"accrual".
              app.js listens for "change" on the fieldset (radios bubble) and reads
              input[name="postedToggle"]:checked → value "accrual" = accrual interest.
@@ -109,8 +112,9 @@
              .bar/.line win over the CSS fallbacks. Left axis (bars) = green,
              right axis (running line + dots) = #3182CE (--chart-line) blue;
              the dual-axis charts share one neutral $0 gridline (app.js re-expands
-             the flatter domain) and thin x labels to every skip-th month —
-             slanted -45° with .tick marks between — when a 21-month band crowds
+             the flatter domain) and thin x labels to every skip-th month — always
+             horizontal + middle-anchored on the band centre, with a 10-unit .tick
+             between — the step is computed live from the visible month count
   Tables     #monthlyTable > tbody#monthlyBody   cols: Month | Net P&L | Trades | Avg / trade
              #drillTable   > tbody#drillBody     cols: Symbol | Asset class | Trades | Net P&L
              #drillTitle   drill card heading
@@ -175,9 +179,9 @@
      surface. Ids are unchanged (#yearSelect #currencyToggle #fxInput #fxReset
      #fileInput #clearBtn); styles.css carries the .toolbar colour overrides.
      Sticky top z-index 15 (under the footer/dialogs, over every card). The row
-     wraps below 1180px so Clear and the tickers cluster are always reachable;
-     from 1180px it is one slim horizontally scrollable row that keeps its thin
-     scrollbar (.toolbar__inner). -->
+     flex-wraps at every width — one slim row while the controls fit, a second
+     line when they do not — so no control is ever clipped or hidden behind a
+     scroller (.toolbar__inner). -->
 <section class="toolbar" aria-label="Dashboard controls">
   <div class="container toolbar__inner">
 
@@ -247,6 +251,12 @@
         <button id="tickerBtn" class="btn btn--outline" type="button"
                 aria-haspopup="dialog" aria-controls="tickerModal">Tickers (0)</button>
         <div id="includeChips" class="chips" role="group" aria-labelledby="includeLabel"></div>
+        <!-- app.js-owned "+n" chip: stands in for the included tickers the fixed
+             320px cluster cannot show. Its title/aria-label carry the full list
+             and data-open-tickers opens #tickerModal (the complete list). -->
+        <button id="includeMore" class="chip chip--more" type="button"
+                aria-haspopup="dialog" aria-controls="tickerModal"
+                data-open-tickers hidden></button>
       </div>
       <p id="filterNote" class="filter-note" aria-live="polite" hidden></p>
     </div>

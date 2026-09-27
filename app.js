@@ -15,6 +15,7 @@
  * kpiMonth kpiAvg kpiBest chartSvg chartTip breakdownSvg breakdownTip monthlyBody
  * drillBody drillTitle emptyState errorBox clearBtn postedToggle fileLabel,
  * includeChips tickerBtn toTopTickers tickersToTop filterNote tickerSearchClear
+ * includeMore (the "+n" chip for chips the fixed cluster cannot show)
  * fxBadge fxDetail fxInput fxReset csvHelpBtn csvHelpModal csvHelpClose
  * heroCsvInfo heroCsvHelp (the hero subtitle "i" opens the same help dialog), plus
  * the optional input[name="currencyToggle"] USD/AUD switch, the interest card
@@ -955,21 +956,36 @@ const IBKR = (function () {
   }
 
   /**
-   * One x-axis month slot. A full label needs ~48 viewBox units of band; once
-   * the band shrinks below that (21-month exports), only every skip-th month
-   * keeps its text — rotated -45° around its tick so it rises up-right along
-   * the diagonal and neighbouring labels stay parallel without colliding (a
-   * text-anchor="end" label would hang below the axis and clip) — and the rest
-   * get a 10-unit tick mark. A 9-month export (band > 48, skip = 1) keeps
-   * every label centred.
+   * X-label budget in viewBox units: a horizontal "Sep" fills ~36 at the biggest
+   * .label size styles.css switches in (24px) and ~20 at the desktop 11px, so 56
+   * is the shared floor with air on both sides. The multi-year "Sep '25" adds the
+   * ~45-unit " 'YY" suffix on top of the widest month name, hence 100 for those
+   * bands. Nothing is ever rotated.
+   */
+  const X_LABEL_BUDGET = 56;
+  const X_LABEL_BUDGET_YEAR = 100;
+
+  /**
+   * Months between drawn x labels for a band this wide. Derived live from the
+   * visible month count — any 1 to 60+, so never a hardcoded 9/21 — and rounded
+   * up so neighbouring horizontal labels keep the budget above. Coarser only
+   * when the range spans years, because "Sep '25" is wider than "Sep".
+   */
+  function xLabelSkip(band, multiYear) {
+    const budget = multiYear ? X_LABEL_BUDGET_YEAR : X_LABEL_BUDGET;
+    return Math.max(1, Math.ceil(budget / band));
+  }
+
+  /**
+   * One x-axis month slot: a horizontal, middle-anchored label on every skip-th
+   * month's centre, a 10-unit tick mark in between. No rotate() branch — the
+   * diagonal variant is gone, so every drawn label reads left to right and
+   * nothing hangs below the axis.
    */
   function xLabelMarkup(label, x, y, i, skip) {
     const at = x.toFixed(1);
     if (i % skip === 0) {
-      const anchor = skip > 1
-        ? ` transform="rotate(-45 ${at} ${y})" text-anchor="start"`
-        : ' text-anchor="middle"';
-      return `<text class="label" x="${at}" y="${y}"${anchor}>${label}</text>`;
+      return `<text class="label" x="${at}" y="${y}" text-anchor="middle">${label}</text>`;
     }
     return `<line class="tick" x1="${at}" y1="${y}" x2="${at}" y2="${y - 10}" stroke="currentColor" />`;
   }
@@ -1112,8 +1128,8 @@ const IBKR = (function () {
     const cx = i => pl + band * (i + 0.5);
     const barW = Math.max(6, Math.min(12, band - 6));
     const zeroY = yL(0); // === yR(0) after sharedZeroLo
-    const skip = Math.max(1, Math.ceil(48 / band)); // thin x labels below a ~48-unit band
     const multiYear = state.year === 'all' && new Set(keys.map(k => k.slice(0, 4))).size > 1;
+    const skip = xLabelSkip(band, multiYear); // live from keys.length — never a hardcoded 9/21
     let out = '';
     // Grid + labels track each axis: left (bars) in green, right (running total)
     // in --chart-line blue; the shared $0 line is neutral and drawn once.
@@ -1195,8 +1211,8 @@ const IBKR = (function () {
     const band = iw / keys.length;
     const cx = i => pl + band * (i + 0.5);
     const barW = Math.max(6, Math.min(12, band - 6));
-    const skip = Math.max(1, Math.ceil(48 / band)); // thin x labels below a ~48-unit band
     const multiYear = state.year === 'all' && new Set(keys.map(k => k.slice(0, 4))).size > 1;
+    const skip = xLabelSkip(band, multiYear); // live from keys.length — never a hardcoded 9/21
     let out = '';
     for (const v of [hi, 0, lo]) {
       const yy = y(v).toFixed(1);
@@ -1333,8 +1349,8 @@ const IBKR = (function () {
     const cx = i => pl + band * (i + 0.5);
     const barW = Math.max(6, Math.min(12, band - 6));
     const zeroY = yL(0); // === yR(0) after sharedZeroLo
-    const skip = Math.max(1, Math.ceil(48 / band)); // thin x labels below a ~48-unit band
     const multiYear = state.year === 'all' && new Set(keys.map(k => k.slice(0, 4))).size > 1;
+    const skip = xLabelSkip(band, multiYear); // live from keys.length — never a hardcoded 9/21
     let out = '';
     // left grid/labels follow the interest bars (green), right follow the running line;
     // the shared $0 line is neutral and drawn once.
@@ -1472,6 +1488,50 @@ const IBKR = (function () {
       const title = `Including ${label} in every total — click to remove`;
       return `<button type="button" class="chip" data-ticker="${esc(sym)}" aria-pressed="true" title="${esc(title)}">${esc(label)}</button>`;
     }).join('');
+    measureIncludeOverflow();
+  }
+
+  /**
+   * #includeMore — the "+n" chip that stands in for the included tickers the fixed
+   * 320px cluster cannot show. #includeChips (flex: 0 1 auto + overflow: hidden in
+   * styles.css) is the clip box, so this pass hides the tail chips that fall outside
+   * it and writes the count into the chip; its title/aria-label carry the full list
+   * and data-open-tickers opens the picker (#tickerModal). Two passes because the
+   * chip's own label takes room from the row; it no-ops while the cluster is empty
+   * or unlaid-out (zero width), and re-runs on window resize, since the toolbar's
+   * wrapped width decides how many chips fit.
+   */
+  function measureIncludeOverflow() {
+    const el = byId('includeChips');
+    const more = byId('includeMore');
+    if (!el || !more) return;
+    const chips = Array.prototype.slice.call(el.querySelectorAll('button[data-ticker]'));
+    if (!chips.length) { more.hidden = true; more.textContent = ''; return; }
+    let count = 0;
+    for (let pass = 0; pass < 3; pass++) {
+      for (const chip of chips) chip.hidden = false;
+      more.hidden = false;
+      const right = el.getBoundingClientRect().right;
+      if (!right) { // not laid out — never clip blind
+        for (const chip of chips) chip.hidden = false;
+        more.hidden = true;
+        return;
+      }
+      let clipped = 0;
+      for (let i = chips.length - 1; i >= 0; i--) {
+        if (chips[i].getBoundingClientRect().right <= right + 0.5) break;
+        chips[i].hidden = true;
+        clipped++;
+      }
+      if (clipped === count) break; // the row is stable at this label width
+      count = clipped;
+      more.textContent = '+' + count; // reserve the real width for the next pass
+    }
+    if (!count) { more.hidden = true; more.textContent = ''; return; }
+    const label = `${count} more included ticker${count === 1 ? '' : 's'}`;
+    more.textContent = '+' + count;
+    more.title = `${label} — ${state.include.map(sym => scopedSymbol(sym, state.includeScope[sym])).join(', ')} · click for the full list`;
+    more.setAttribute('aria-label', `${label} — open the ticker list`);
   }
 
   /**
@@ -2311,6 +2371,9 @@ const IBKR = (function () {
     listen(byId('fxBadge'), 'focusin', placeFxDetail);
     // remeasure all four popovers on viewport changes (idempotent; hidden ones re-anchor)
     if (typeof window !== 'undefined') listen(window, 'resize', replacePopovers);
+    // the toolbar's width decides how many chips the fixed cluster fits — keep the
+    // "+n" #includeMore count (and the clip) in step with it
+    if (typeof window !== 'undefined') listen(window, 'resize', measureIncludeOverflow);
     syncFxInput();
     const label = byId('fileLabel');
     if (label && !label.textContent.trim() && !hasData()) setFileLabel('No files selected');

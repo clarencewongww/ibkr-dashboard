@@ -95,9 +95,12 @@ The **Monthly realised P&L** card is dual-axis: the green/red bars scale to the 
 (**left** axis, green labels) and the blue running-total line scales to the cumulative series
 (**right** axis, blue labels) — a month far larger than the rest can no longer flatten the
 other series. Both axes pivot on one shared **$0**: the zero gridline is drawn once, neutral,
-and only the non-zero lines keep their side's colour. X labels thin themselves when 21 months
-would collide — every second month keeps its text, slanted −45°, with small tick marks between —
-while a 9-month export keeps all nine labels centred. Hover a bar for `May 2026 · Net $X ·
+and only the non-zero lines keep their side's colour. X labels stay horizontal, centred on their
+month, and thin themselves live from the number of visible months — never a fixed 9/21: while a
+band clears the ~56-unit label budget every month keeps its text, and once it does not every
+2nd/3rd/… month keeps it, with a small 10-unit tick mark in each label-less slot. A 9-month
+export still shows all nine labels centred; multi-year ranges spell the year (`Sep '25`) and
+thin a little coarser because those labels are wider. Hover a bar for `May 2026 · Net $X ·
 Running $Y`; the dots carry `May 2026 · Running $Y`. The legend marks the sides and matches the
 series: **Net P&L (left)** green, **Running total (right)** blue `#3182CE`.
 
@@ -211,10 +214,13 @@ mirror of Exclude, using the same case-insensitive root-symbol matching and pers
 - **Chips.** Every included root appears as a pressed chip next to the button, labelled with its
   scope while scoped (`AMD (Options only)`); click a chip to drop that ticker from the allow-list.
   The cluster keeps a **fixed 320px width** — applying or clearing chips never reflows the
-  toolbar — and stays on one line inside it: chips scroll horizontally and the `#filterNote`
-  summary ellipsises long lists (its `title` carries the full text). Below 1180px the
-  toolbar wraps rather than clipping; from 1180px the row scrolls and keeps a thin scrollbar
-  instead of hiding the overflow.
+  toolbar — and stays on one line inside it without ever scrolling (no scrollbar, visible or
+  hidden): visible chips are clipped at the cluster edge and the rest are counted in a **`+n`**
+  chip (`#includeMore`), whose `title` lists every included symbol and which opens the picker for
+  the complete list. The `#filterNote` summary (11px) ellipsises long lists and mirrors the full
+  text into its `title`. The toolbar itself flex-wraps at every width — one slim row while the
+  controls fit, an extra line when they do not — so nothing is ever clipped or parked behind an
+  overflow.
 - **Jump back.** Both the Monthly summary header and the drill-down header carry a **Tickers ↑**
   shortcut (`#toTopTickers` / `#tickersToTop`) that scrolls the Tickers button into view, focuses
   it and flashes a short glow around it.
@@ -276,7 +282,7 @@ memory; nothing is rewritten.
 
 | Path | Role |
 | --- | --- |
-| `index.html` | Markup contract: header, year select, month chips (drill-down card header), chart cards, tables, `#postedToggle`, `#tickerBtn` / `#tickerSearchClear` / `#tickerCount` / `#filterNote` / `#toTopTickers` / `#tickersToTop`, `#assetToggle` asset radios, `#fxInput` / `#fxReset` / `#fxBadge`, legend income popover `#incomeInfo` / `#incomeHelp`, `#clearBtn`, file input, CSV help `#csvHelpBtn` / `#heroCsvInfo` / `#csvHelpModal`. |
+| `index.html` | Markup contract: header, year select, month chips (drill-down card header), chart cards, tables, `#postedToggle`, `#tickerBtn` / `#includeMore` / `#tickerSearchClear` / `#tickerCount` / `#filterNote` / `#toTopTickers` / `#tickersToTop`, `#assetToggle` asset radios, `#fxInput` / `#fxReset` / `#fxBadge`, legend income popover `#incomeInfo` / `#incomeHelp`, `#clearBtn`, file input, CSV help `#csvHelpBtn` / `#heroCsvInfo` / `#csvHelpModal`. |
 | `styles.css` | All styling and design tokens (CSS custom properties in `:root`); no external assets. |
 | `app.js` | CSV parser (Flex + Activity Statement), month aggregation, root-symbol include/exclude filter with per-kind scopes, session-only asset filter, USD/AUD rate chain, rendering. Exposes `window.IBKR` for debugging. |
 | `Start-Dashboard.sh` | Kill-then-start launcher: frees port 8000, serves this folder on **127.0.0.1** and opens the page. |

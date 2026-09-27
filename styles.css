@@ -485,39 +485,52 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 .toolbar .file-label { color: var(--muted); }
 
-/* include tickers: the Tickers (n) modal button beside the applied chips.
-   Single line by contract — the row itself scrolls horizontally (chips are
-   0 0 auto and never wrap/shrink) and #filterNote ellipsises, so the sticky
-   band's height is fixed even with 5+ exclusions. */
+/* include tickers: the Tickers (n) modal button beside the applied chips, plus
+   the "+n" #includeMore chip app.js shows when the cluster cannot hold them all.
+   No-scrollbar, single-line contract — the row clips (overflow:hidden, never
+   auto), chips are 0 0 auto and never wrap/shrink, #includeChips is what gives,
+   and #filterNote ellipsises — so the sticky band's height is fixed even with
+   5+ exclusions. */
 .include-row {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
-  overflow-x: auto;
+  overflow: hidden;
   /* 5px ring room (2px outline + 2px offset, plus the .glow spread) inside the
-     scroll clip; the negative margin keeps the row's outer box unchanged. */
+     clip; the negative margin keeps the row's outer box unchanged. */
   padding: 5px;
   margin: -5px;
-  scrollbar-width: thin;
 }
 
 .include-row .btn,
-.include-row .chip,
-.include-row .chips { flex: 0 0 auto; white-space: nowrap; }
-.include-row .chips { flex-wrap: nowrap; }
+.include-row .chip { flex: 0 0 auto; white-space: nowrap; }
+
+/* #includeChips is the shrinking half of the row: its chips stay 0 0 auto on one
+   line while the container clips the overflow, so #includeMore keeps its slot and
+   the 320px cluster's outer box never changes size. */
+.include-row .chips {
+  flex: 0 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
 
 /* Include/exclude ticker cluster. Fixed 320px (max-width caps it to the row on
    viewports narrower than ~352px) — the toolbar keeps one outer size whether
    #includeChips is empty or full, so applying or clearing tickers never
-   reflows the band. The .include-row scrolls its own overflow — chips stay on
-   one line and 0 0 auto. */
+   reflows the band. */
 #includeWrap {
   flex: 0 0 320px;
   width: 320px;
   max-width: min(320px, 100%);
   min-width: 0;
 }
+
+/* #includeMore — "+n" chip for the included tickers the 320px cluster cannot
+   show. app.js sets the count, puts the full list in title/aria-label and hides
+   it when everything fits; data-open-tickers opens #tickerModal. */
+#includeMore { flex: 0 0 auto; }
 
 #includeWrap .chips { margin-bottom: 0; }
 
@@ -526,7 +539,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 .filter-note {
   margin-top: 6px;
   max-width: 100%;
-  font-size: 12.5px;
+  font-size: 11px;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -893,7 +906,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
    and flatten the green/red bar encoding). */
 .chart .grid { stroke: var(--border); stroke-dasharray: 4 6; stroke-width: 1; }
 .chart .axis { stroke: var(--border); stroke-width: 1; }
-/* x-axis tick marks between thinned labels (21-month exports) */
+/* x-axis tick marks in the month slots whose label is thinned away */
 .chart .tick { stroke: var(--muted); stroke-width: 1; }
 .chart .chart__hint { fill: var(--muted); font-size: 13px; font-family: var(--font); }
 .chart .bar:not([fill]) { fill: var(--teal); }
@@ -1565,29 +1578,13 @@ body:has(dialog[open]) { overflow: hidden; }
   .hero__inner { flex-wrap: nowrap; }
 }
 
-/* Toolbar row. Below 1180px the base .toolbar__inner flex-wrap:wrap wins, so
-   695/768/1024 always reach Clear and the tickers cluster by stacking instead
-   of hiding them in an invisible scroller. From 1180px the single slim row is
-   kept and scrolls its small excess (the controls fit from ~1240px) with the
-   scrollbar as affordance: the old scrollbar-width:none /
-   ::-webkit-scrollbar display:none pair is gone, so a thin styled bar paints
-   while the row scrolls (and stays put on classic-scrollbar platforms). */
+/* Toolbar row. .toolbar__inner flex-wraps at every width: one slim row while
+   the controls fit, a second line when they do not, so Clear and the tickers
+   cluster stay reachable and nothing is clipped. From 1180px the row is a
+   single line unless a wide control needs the next one — no overflow-x
+   scroller, no scrollbar-width:none / ::-webkit-scrollbar display:none trick
+   (both are gone, so no affordance lies about hidden content either). */
 @media (min-width: 1180px) {
-  .toolbar__inner {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    /* ring room: overflow-x:auto also clips the other axis, so pad then cancel
-       with a negative margin — the sticky band keeps its height. */
-    padding-block: 5px;
-    margin-block: -5px;
-  }
-  .toolbar__inner::-webkit-scrollbar { height: 6px; }
-  .toolbar__inner::-webkit-scrollbar-track { background: transparent; }
-  .toolbar__inner::-webkit-scrollbar-thumb {
-    border-radius: 999px;
-    background: var(--border);
-  }
-  .toolbar__inner::-webkit-scrollbar-thumb:hover { background: var(--muted); }
   .toolbar .field { flex: 0 0 auto; }
 }
 
