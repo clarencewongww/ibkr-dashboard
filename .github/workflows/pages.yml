@@ -1,0 +1,58 @@
+name: Deploy to GitHub Pages
+
+# Publishes this repo as a static site under https://<owner>.github.io/<repo>/.
+# Code only: the guard job fails the deploy if any statement data ever becomes
+# tracked, and the artifact is the checked-out commit, so local (gitignored)
+# CSV exports and screengrabs are never uploaded.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    name: Privacy guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fail if any statement data is tracked
+        run: |
+          set -euo pipefail
+          found="$(git ls-files -- '*.csv' '*.CSV' 'data/*' 'screengrabs/*' 'screenshots/*' \
+            | grep -v -x 'data/.gitkeep' || true)"
+          if [ -n "$found" ]; then
+            echo "::error::Refusing to deploy - tracked statement data found:"
+            printf '%s\n' "$found"
+            exit 1
+          fi
+          echo "OK: no tracked CSV / data exports / screengrabs."
+
+  deploy:
+    name: Deploy
+    needs: guard
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

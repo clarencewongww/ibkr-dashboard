@@ -355,3 +355,49 @@ CacheStorage exactly as it stays out of the network, and old shell caches are pu
 
 Install the PWA once and every later launch goes straight to the app window.
 
+---
+
+## 8. Hosted copy (GitHub Pages)
+
+The repo is deployable as a static site — **code only, never data**.
+
+- **URL:** `https://clarencewongww.github.io/ibkr-dashboard/` (once the repo exists at
+  `github.com/clarencewongww/ibkr-dashboard` and Pages is enabled).
+- **Enable once:** repo → **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+  `.github/workflows/pages.yml` then publishes the repo root on every push to `main` (or via
+  **Run workflow** / `workflow_dispatch`). `.nojekyll` keeps the uploaded tree byte-for-byte
+  untouched by Jekyll.
+- **Privacy guard (blocks the deploy, not just the README):** the workflow's `guard` job runs
+  `git ls-files '*.csv' '*.CSV' 'data/*' 'screengrabs/*' 'screenshots/*'` and fails if anything other
+  than `data/.gitkeep` is tracked, and `deploy` needs it — so a commit that ever leaks a statement,
+  cache export or screenshot can never be published. The uploaded artifact is the checkout itself;
+  gitignored local copies in `data/`, `screengrabs/` or `screenshots/` are not part of it.
+- **Sub-path safe:** `manifest.webmanifest` uses `start_url: "./index.html"`, `scope: "./"`,
+  `id: "./"`; every asset reference is relative; and `sw.js` resolves its shell allowlist and scope
+  root against its own location (`new URL('./', self.location)`). The same build therefore works at
+  `https://…/ibkr-dashboard/` and at `http://127.0.0.1:8000/`, including re-opening the directory URL
+  `…/ibkr-dashboard/` offline.
+- **Install:** open the Pages URL → same flow as §7 (Brave: **Cast, save, and share → Install page as
+  app…**). HTTPS makes it installable even on a phone; the manifest and icons are served from the
+  sub-path, so no signed-in GitHub session is needed to *use* the installed app.
+- **Offline:** the service worker caches only the shell (`index.html`, `styles.css`, `app.js`,
+  `manifest.webmanifest`, the five icons) in `ibkr-shell-v2`, network-first with the cached shell as
+  the offline fallback. Reloading the Pages URL with no connection still opens the dashboard; the last
+  parsed file is restored from `localStorage` as usual (≤ 2 MB, key `ibkr-v1`, `Clear` wipes it).
+
+### Privacy proof for the hosted copy
+
+- **Your CSV never leaves the tab.** Files are read with `FileReader` and cached only in
+  `localStorage`; there is no upload path.
+- **No telemetry.** No XHR, no `sendBeacon`, no `WebSocket`, no analytics, no external fonts or
+  scripts (`grep -nE "XMLHttpRequest|sendBeacon|WebSocket|EventSource" app.js index.html` → empty).
+- **The only outbound requests are three fixed FX URLs** (frankfurter.dev, open.er-api.com,
+  jsdelivr currency-api), each a literal constant fetched with `cache: 'no-store'`; no query string
+  is ever built from your data. They are skipped entirely when you set a manual rate or use `file://`
+  with a cached/baked rate.
+- **The service worker is shell-only.** `/data/*`, `*.csv` and every cross-origin request fall
+  through untouched (never intercepted, never cached, never served), so statement data cannot end up
+  in CacheStorage either.
+- **Nothing personal is in git.** `data/*`, `*.csv` / `*.CSV`, `screengrabs/` and `screenshots/` are
+  gitignored, and the Pages workflow re-checks that on every deploy. Verify locally with
+  `git ls-files | grep -E "\.csv$|data/|screengrabs/"` → only `data/.gitkeep`.

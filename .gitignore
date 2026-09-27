@@ -18,3 +18,11 @@ data/*
 
 # Local tooling state (OpenChamber, editors)
 .openchamber/
+
+# Screenshots / captures of real P&L - never commit
+screengrabs/
+screenshots/
+
+# NOTE: do not add a broad *.png ignore here - icons/*.png ship with the PWA
+# and must stay tracked (icons/icon-192.png, icon-512.png, maskable-512.png,
+# apple-touch-icon-180.png).

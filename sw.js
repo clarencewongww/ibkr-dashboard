@@ -28,6 +28,10 @@ const SHELL = [
 
 const SHELL_URLS = SHELL.map((path) => new URL(path, self.location).href);
 const INDEX = new URL('index.html', self.location);
+/* Scope root: '/<repo>/' on GitHub Pages, '/' on the local launcher - both
+   resolve against this worker's own URL, so a sub-path deploy is offline-safe
+   when the scope URL itself ('.../ibkr-dashboard/') is reloaded. */
+const ROOT = new URL('./', self.location);
 const SHELL_PATHS = {};
 
 for (const href of SHELL_URLS) SHELL_PATHS[new URL(href).pathname] = href;
@@ -60,9 +64,10 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // '/' is a navigation to the dashboard itself; everything else must match
-  // the allowlist exactly (query strings included in the request, not the key).
-  const path = url.pathname === '/' ? INDEX.pathname : url.pathname;
+  // the scope root ('/' locally, '/<repo>/' on Pages) is a navigation to the
+  // dashboard itself; everything else must match the allowlist exactly (query
+  // strings included in the request, not the key).
+  const path = url.pathname === ROOT.pathname ? INDEX.pathname : url.pathname;
   const cacheKey = SHELL_PATHS[path];
   if (!cacheKey) return;
 
