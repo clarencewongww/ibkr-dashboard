@@ -1579,11 +1579,12 @@ body:has(dialog[open]) { overflow: hidden; }
 }
 
 /* Toolbar row. .toolbar__inner flex-wraps at every width: one slim row while
-   the controls fit, a second line when they do not, so Clear and the tickers
-   cluster stay reachable and nothing is clipped. From 1180px the row is a
-   single line unless a wide control needs the next one — no overflow-x
-   scroller, no scrollbar-width:none / ::-webkit-scrollbar display:none trick
-   (both are gone, so no affordance lies about hidden content either). */
+   the controls fit, extra lines when they do not (3 rows at 768px, 4 at 375px),
+   so Clear and the tickers cluster stay reachable and nothing is clipped. From
+   1180px the row is a single line unless a wide control needs the next one — no
+   overflow-x scroller, no scrollbar-width:none / ::-webkit-scrollbar
+   display:none trick (both are gone, so no affordance lies about hidden content
+   either). */
 @media (min-width: 1180px) {
   .toolbar .field { flex: 0 0 auto; }
 }

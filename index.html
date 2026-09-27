@@ -9,6 +9,10 @@
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#151928">
+<!-- Sub-path safe for the GitHub Pages copy: every asset ref here is relative, the
+     manifest's start_url/scope/id are ./ and sw.js resolves its allowlist from its
+     own URL. The deploy is gated by .github/workflows/pages.yml's privacy guard,
+     which fails the build if any CSV / data export / screengrab is ever tracked. -->
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon-180.png">
 <meta name="description" content="Local IBKR Activity Statement dashboard: monthly realised P&amp;L, instrument drill-down. Files never leave the browser.">
@@ -77,9 +81,12 @@
              320px cluster never scrolls or wraps — .include-row/#includeChips clip
              (overflow:hidden), app.js hides the chips that do not fit and counts
              them in '+n' #includeMore (title = full list, click opens the picker);
-             #filterNote is 11px and ellipsises long lists, mirroring the full
-             string into title=. .toolbar__inner flex-wraps at every width (no
-             scroller, no hidden-scrollbar trick); the band keeps its height.
+             that chip is a real button — Tab reaches it, Enter/Space open the same
+             picker and the dialog hands focus back to it on close — and its
+             title/aria-label are cleared whenever it hides. #filterNote is 11px
+             and ellipsises long lists, mirroring the full string into title=.
+             .toolbar__inner flex-wraps at every width (no scroller, no
+             hidden-scrollbar trick); the band keeps its height.
   Basis      #postedToggle  fieldset; radios name="postedToggle" value="posted"|"accrual".
              app.js listens for "change" on the fieldset (radios bubble) and reads
              input[name="postedToggle"]:checked → value "accrual" = accrual interest.
@@ -114,7 +121,8 @@
              the dual-axis charts share one neutral $0 gridline (app.js re-expands
              the flatter domain) and thin x labels to every skip-th month — always
              horizontal + middle-anchored on the band centre, with a 10-unit .tick
-             between — the step is computed live from the visible month count
+             between — the step comes from xLabelSkip(), computed live from the
+             visible month count on all three charts (never a hardcoded 9/21)
   Tables     #monthlyTable > tbody#monthlyBody   cols: Month | Net P&L | Trades | Avg / trade
              #drillTable   > tbody#drillBody     cols: Symbol | Asset class | Trades | Net P&L
              #drillTitle   drill card heading
@@ -179,8 +187,8 @@
      surface. Ids are unchanged (#yearSelect #currencyToggle #fxInput #fxReset
      #fileInput #clearBtn); styles.css carries the .toolbar colour overrides.
      Sticky top z-index 15 (under the footer/dialogs, over every card). The row
-     flex-wraps at every width — one slim row while the controls fit, a second
-     line when they do not — so no control is ever clipped or hidden behind a
+     flex-wraps at every width — one slim row while the controls fit, extra
+     lines when they do not — so no control is ever clipped or hidden behind a
      scroller (.toolbar__inner). -->
 <section class="toolbar" aria-label="Dashboard controls">
   <div class="container toolbar__inner">

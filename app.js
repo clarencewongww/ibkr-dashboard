@@ -26,6 +26,16 @@
  * and the [data-tab]-driven Overview/Interest tabs. All of those are optional:
  * every lookup is null-safe so the script survives an older shell.
  *
+ * X labels: the step is computed live by xLabelSkip() from the visible month
+ * count on all three charts (chartSvg, interestSvg, breakdownSvg) — horizontal,
+ * middle-anchored labels plus a 10-unit .tick in every thinned slot, never
+ * rotated and never a hardcoded 9/21.
+ *
+ * Hosting: the shell is sub-path safe for the GitHub Pages copy (relative refs,
+ * manifest ./ scope, sw.js resolves its allowlist from its own URL), and
+ * .github/workflows/pages.yml gates the deploy with a privacy guard that fails
+ * if any CSV / data export / screengrab is ever tracked.
+ *
  * Browser: window.IBKR = { state, aggregateByMonth, renderAll, ... }.
  * Node (tests): module.exports.
  */
@@ -1496,17 +1506,26 @@ const IBKR = (function () {
    * 320px cluster cannot show. #includeChips (flex: 0 1 auto + overflow: hidden in
    * styles.css) is the clip box, so this pass hides the tail chips that fall outside
    * it and writes the count into the chip; its title/aria-label carry the full list
-   * and data-open-tickers opens the picker (#tickerModal). Two passes because the
-   * chip's own label takes room from the row; it no-ops while the cluster is empty
-   * or unlaid-out (zero width), and re-runs on window resize, since the toolbar's
-   * wrapped width decides how many chips fit.
+   * and data-open-tickers opens the picker (#tickerModal). It is a real <button>, so
+   * Tab reaches it and Enter/Space activate the same click path; the dialog wiring
+   * hands focus back to it on close. Two passes because the chip's own label takes
+   * room from the row; it no-ops while the cluster is empty or unlaid-out (zero
+   * width), and re-runs on window resize, since the toolbar's wrapped width decides
+   * how many chips fit. Every hide path also clears title/aria-label, so a stale
+   * symbol list never lingers on the hidden chip.
    */
   function measureIncludeOverflow() {
     const el = byId('includeChips');
     const more = byId('includeMore');
     if (!el || !more) return;
+    const hideMore = () => {
+      more.hidden = true;
+      more.textContent = '';
+      more.title = '';
+      more.removeAttribute('aria-label');
+    };
     const chips = Array.prototype.slice.call(el.querySelectorAll('button[data-ticker]'));
-    if (!chips.length) { more.hidden = true; more.textContent = ''; return; }
+    if (!chips.length) { hideMore(); return; }
     let count = 0;
     for (let pass = 0; pass < 3; pass++) {
       for (const chip of chips) chip.hidden = false;
@@ -1514,7 +1533,7 @@ const IBKR = (function () {
       const right = el.getBoundingClientRect().right;
       if (!right) { // not laid out — never clip blind
         for (const chip of chips) chip.hidden = false;
-        more.hidden = true;
+        hideMore();
         return;
       }
       let clipped = 0;
@@ -1527,7 +1546,7 @@ const IBKR = (function () {
       count = clipped;
       more.textContent = '+' + count; // reserve the real width for the next pass
     }
-    if (!count) { more.hidden = true; more.textContent = ''; return; }
+    if (!count) { hideMore(); return; }
     const label = `${count} more included ticker${count === 1 ? '' : 's'}`;
     more.textContent = '+' + count;
     more.title = `${label} — ${state.include.map(sym => scopedSymbol(sym, state.includeScope[sym])).join(', ')} · click for the full list`;

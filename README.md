@@ -100,9 +100,11 @@ month, and thin themselves live from the number of visible months — never a fi
 band clears the ~56-unit label budget every month keeps its text, and once it does not every
 2nd/3rd/… month keeps it, with a small 10-unit tick mark in each label-less slot. A 9-month
 export still shows all nine labels centred; multi-year ranges spell the year (`Sep '25`) and
-thin a little coarser because those labels are wider. Hover a bar for `May 2026 · Net $X ·
-Running $Y`; the dots carry `May 2026 · Running $Y`. The legend marks the sides and matches the
-series: **Net P&L (left)** green, **Running total (right)** blue `#3182CE`.
+thin a little coarser because those labels are wider. The same live step drives the Income
+breakdown and Interest charts, so all three thin and tick identically. Hover a bar for
+`May 2026 · Net $X · Running $Y`; the dots carry `May 2026 · Running $Y`. The legend marks the
+sides and matches the series: **Net P&L (left)** green, **Running total (right)** blue
+`#3182CE`.
 
 On desktop the four Overview cards form two columns — **chart + Income breakdown** on the left
 (1.55fr) and **Monthly summary + drill-down** on the right (1fr); each column is an independent
@@ -217,10 +219,12 @@ mirror of Exclude, using the same case-insensitive root-symbol matching and pers
   toolbar — and stays on one line inside it without ever scrolling (no scrollbar, visible or
   hidden): visible chips are clipped at the cluster edge and the rest are counted in a **`+n`**
   chip (`#includeMore`), whose `title` lists every included symbol and which opens the picker for
-  the complete list. The `#filterNote` summary (11px) ellipsises long lists and mirrors the full
-  text into its `title`. The toolbar itself flex-wraps at every width — one slim row while the
-  controls fit, an extra line when they do not — so nothing is ever clipped or parked behind an
-  overflow.
+  the complete list. It is a real button: **Tab** reaches it, **Enter/Space** open the same picker,
+  closing the dialog hands focus back to it, and every time the chip hides its `title`/`aria-label`
+  are cleared so no stale symbol list lingers. The `#filterNote` summary (11px) ellipsises long
+  lists and mirrors the full text into its `title`. The toolbar itself flex-wraps at every width —
+  one slim row while the controls fit, extra lines when they do not (3 rows at 768px, 4 at 375px) —
+  so nothing is ever clipped or parked behind an overflow.
 - **Jump back.** Both the Monthly summary header and the drill-down header carry a **Tickers ↑**
   shortcut (`#toTopTickers` / `#tickersToTop`) that scrolls the Tickers button into view, focuses
   it and flashes a short glow around it.
@@ -285,10 +289,14 @@ memory; nothing is rewritten.
 | `index.html` | Markup contract: header, year select, month chips (drill-down card header), chart cards, tables, `#postedToggle`, `#tickerBtn` / `#includeMore` / `#tickerSearchClear` / `#tickerCount` / `#filterNote` / `#toTopTickers` / `#tickersToTop`, `#assetToggle` asset radios, `#fxInput` / `#fxReset` / `#fxBadge`, legend income popover `#incomeInfo` / `#incomeHelp`, `#clearBtn`, file input, CSV help `#csvHelpBtn` / `#heroCsvInfo` / `#csvHelpModal`. |
 | `styles.css` | All styling and design tokens (CSS custom properties in `:root`); no external assets. |
 | `app.js` | CSV parser (Flex + Activity Statement), month aggregation, root-symbol include/exclude filter with per-kind scopes, session-only asset filter, USD/AUD rate chain, rendering. Exposes `window.IBKR` for debugging. |
+| `manifest.webmanifest` | PWA manifest (`start_url`/`scope`/`id` are `./` so the install works under the Pages sub-path). |
+| `sw.js` | Offline-shell service worker (`ibkr-shell-v2`): allowlisted shell files only, scope resolved from its own URL; never touches CSVs, `data/` or the FX lookups. |
+| `icons/` | PWA icons shipped with the app (`icon.svg`, 192/512, maskable-512, apple-touch-180) — tracked, unlike screengrabs. |
 | `Start-Dashboard.sh` | Kill-then-start launcher: frees port 8000, serves this folder on **127.0.0.1** and opens the page. |
 | `IBKR P&L Dashboard.app` | Double-click wrapper around `Start-Dashboard.sh`; no Terminal window (right-click **Open** on first launch only). |
 | `data/` | Your local IBKR exports and scratch space (gitignored). |
-| `.gitignore` | Keeps `*.csv`, `data/*` and env/log noise out of git. |
+| `.github/workflows/pages.yml` | GitHub Pages deploy on `main`, gated by the privacy `guard` job (no tracked CSV / data export / screengrab). |
+| `.gitignore` | Keeps `*.csv`, `data/*`, `screengrabs/`, `screenshots/` and env/log noise out of git. |
 | `README.md` | This file. |
 
 ## 6. Verify it yourself
