@@ -937,6 +937,43 @@ const IBKR = (function () {
     return [hi + pad, lo - pad];
   }
 
+  /**
+   * Shared-zero dual axes. paddedDomain scales each series independently, which
+   * puts the two axes' $0 gridlines at different heights. Take the higher zero
+   * (smaller fraction from the top) as the shared line and re-expand the lower
+   * one — lo only — until both hi:(-lo) ratios match, so yL(0) === yR(0) and
+   * the zero gridline can be drawn once, neutral. The hi ends and the higher
+   * zero stay put, so any dead space lands at the bottom of the chart.
+   * Returns the possibly-expanded [loL, loR]; the two his never change.
+   */
+  function sharedZeroLo(hiL, loL, hiR, loR) {
+    const fL = hiL / (hiL - loL);
+    const fR = hiR / (hiR - loR);
+    const f = Math.min(fL, fR);
+    const toShared = (hi, lo, own) => own <= f ? lo : -hi * (1 - f) / f;
+    return [toShared(hiL, loL, fL), toShared(hiR, loR, fR)];
+  }
+
+  /**
+   * One x-axis month slot. A full label needs ~48 viewBox units of band; once
+   * the band shrinks below that (21-month exports), only every skip-th month
+   * keeps its text — rotated -45° around its tick so it rises up-right along
+   * the diagonal and neighbouring labels stay parallel without colliding (a
+   * text-anchor="end" label would hang below the axis and clip) — and the rest
+   * get a 10-unit tick mark. A 9-month export (band > 48, skip = 1) keeps
+   * every label centred.
+   */
+  function xLabelMarkup(label, x, y, i, skip) {
+    const at = x.toFixed(1);
+    if (i % skip === 0) {
+      const anchor = skip > 1
+        ? ` transform="rotate(-45 ${at} ${y})" text-anchor="start"`
+        : ' text-anchor="middle"';
+      return `<text class="label" x="${at}" y="${y}"${anchor}>${label}</text>`;
+    }
+    return `<line class="tick" x1="${at}" y1="${y}" x2="${at}" y2="${y - 10}" stroke="currentColor" />`;
+  }
+
   // chart hooks: .bar / .bar--neg / .line / .dot / .tick / .label are styled by styles.css
   /**
    * Position the hovered chart's tip (`.chart-tip`) at the element's top-centre. The tip is
@@ -1063,40 +1100,48 @@ const IBKR = (function () {
     let run = 0;
     for (const t of totals) { run += t; cumulative.push(run); }
     // Dual axes: bars scale to the monthly totals (left), the running line to the cumulative
-    // series (right), so neither series can flatten the other.
-    const [hiL, loL] = paddedDomain(totals);
-    const [hiR, loR] = paddedDomain(cumulative);
+    // series (right), so neither series can flatten the other. sharedZeroLo then re-expands
+    // the lower zero's domain so both axes pivot on one $0 (drawn once, neutral, below).
+    let [hiL, loL] = paddedDomain(totals);
+    let [hiR, loR] = paddedDomain(cumulative);
+    [loL, loR] = sharedZeroLo(hiL, loL, hiR, loR);
     const scale = (hi, lo) => v => pt + ih * (hi - v) / (hi - lo);
     const yL = scale(hiL, loL);
     const yR = scale(hiR, loR);
     const band = iw / keys.length;
     const cx = i => pl + band * (i + 0.5);
     const barW = Math.max(6, Math.min(12, band - 6));
-    const zeroL = yL(0);
+    const zeroY = yL(0); // === yR(0) after sharedZeroLo
+    const skip = Math.max(1, Math.ceil(48 / band)); // thin x labels below a ~48-unit band
     const multiYear = state.year === 'all' && new Set(keys.map(k => k.slice(0, 4))).size > 1;
     let out = '';
     // Grid + labels track each axis: left (bars) in green, right (running total)
-    // in --chart-line blue. styles.css colours .grid--left/right and .label--left/right.
-    for (const v of [hiL, 0, loL]) {
+    // in --chart-line blue; the shared $0 line is neutral and drawn once.
+    // styles.css colours .grid--left/right and .label--left/right.
+    const zeroYs = zeroY.toFixed(1);
+    out += `<line class="grid" x1="${pl}" y1="${zeroYs}" x2="${W - pr}" y2="${zeroYs}" stroke="currentColor" stroke-opacity="0.5" />`;
+    out += `<text class="label label--left" x="${pl - 8}" y="${(+zeroYs + 3).toFixed(1)}" text-anchor="end">${fmtCompact(0)}</text>`;
+    out += `<text class="label label--right" x="${W - pr + 8}" y="${(+zeroYs + 3).toFixed(1)}" text-anchor="start">${fmtCompact(0)}</text>`;
+    for (const v of [hiL, loL]) {
       const yy = yL(v).toFixed(1);
       out += `<line class="grid grid--left" x1="${pl}" y1="${yy}" x2="${W - pr}" y2="${yy}" stroke="currentColor" stroke-opacity="0.5" />`;
       out += `<text class="label label--left" x="${pl - 8}" y="${(+yy + 3).toFixed(1)}" text-anchor="end">${fmtCompact(v)}</text>`;
     }
-    for (const v of [hiR, 0, loR]) {
+    for (const v of [hiR, loR]) {
       const yy = yR(v).toFixed(1);
       out += `<line class="grid grid--right" x1="${pl}" y1="${yy}" x2="${W - pr}" y2="${yy}" stroke="currentColor" stroke-opacity="0.5" />`;
       out += `<text class="label label--right" x="${W - pr + 8}" y="${(+yy + 3).toFixed(1)}" text-anchor="start">${fmtCompact(v)}</text>`;
     }
     keys.forEach((k, i) => {
       const total = totals[i];
-      const top = total >= 0 ? yL(total) : zeroL;
-      const height = Math.max(1, Math.abs(yL(total) - zeroL));
+      const top = total >= 0 ? yL(total) : zeroY;
+      const height = Math.max(1, Math.abs(yL(total) - zeroY));
       const tip = barTipText(k, 'Net', total, cumulative[i]);
       if (state.month !== 'all' && k === `${state.year}-${state.month}`) {
         out += `<rect x="${(pl + band * i + 2).toFixed(1)}" y="${pt}" width="${(band - 4).toFixed(1)}" height="${ih}" rx="4" fill="currentColor" fill-opacity="0.05" />`;
       }
       out += `<rect class="bar${total < 0 ? ' bar--neg' : ''}" x="${(cx(i) - barW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${barW}" height="${height.toFixed(1)}" rx="2" fill="${total >= 0 ? '#48BB78' : '#F56565'}" tabindex="0" data-tip="${esc(tip)}"><title>${esc(tip)}</title></rect>`;
-      out += `<text class="label" x="${cx(i).toFixed(1)}" y="${H - 16}" text-anchor="middle">${MONTH_NAMES[+k.slice(5, 7) - 1] || k}${multiYear ? " '" + k.slice(2, 4) : ''}</text>`;
+      out += xLabelMarkup(`${MONTH_NAMES[+k.slice(5, 7) - 1] || k}${multiYear ? " '" + k.slice(2, 4) : ''}`, cx(i), H - 16, i, skip);
     });
     out += `<polyline class="line" points="${keys.map((k, i) => `${cx(i).toFixed(1)},${yR(cumulative[i]).toFixed(1)}`).join(' ')}" fill="none" stroke="#3182CE" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`;
     for (let i = 0; i < keys.length; i++) {
@@ -1150,6 +1195,7 @@ const IBKR = (function () {
     const band = iw / keys.length;
     const cx = i => pl + band * (i + 0.5);
     const barW = Math.max(6, Math.min(12, band - 6));
+    const skip = Math.max(1, Math.ceil(48 / band)); // thin x labels below a ~48-unit band
     const multiYear = state.year === 'all' && new Set(keys.map(k => k.slice(0, 4))).size > 1;
     let out = '';
     for (const v of [hi, 0, lo]) {
@@ -1174,7 +1220,7 @@ const IBKR = (function () {
           : `${s.name} · ${monthTipText(st.key, months[st.key])}`;
         out += `<rect class="bar ${s.cls}" x="${(cx(i) - barW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${barW}" height="${h.toFixed(1)}" rx="2" fill="${s.fill}" tabindex="0" data-tip="${esc(tip)}"><title>${esc(tip)}</title></rect>`;
       }
-      out += `<text class="label" x="${cx(i).toFixed(1)}" y="${H - 16}" text-anchor="middle">${MONTH_NAMES[+st.key.slice(5, 7) - 1] || st.key}${multiYear ? " '" + st.key.slice(2, 4) : ''}</text>`;
+      out += xLabelMarkup(`${MONTH_NAMES[+st.key.slice(5, 7) - 1] || st.key}${multiYear ? " '" + st.key.slice(2, 4) : ''}`, cx(i), H - 16, i, skip);
     });
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
     svg.innerHTML = out;
@@ -1276,40 +1322,47 @@ const IBKR = (function () {
     for (const v of values) { run += v; cumulative.push(run); }
     // Dual axes, same maths as renderChart: bars scale to the monthly interest (left),
     // the running line to the cumulative series (right), so a large cumulative total can
-    // no longer squash the bars.
-    const [hiL, loL] = paddedDomain(values);
-    const [hiR, loR] = paddedDomain(cumulative);
+    // no longer squash the bars; sharedZeroLo then gives both axes one $0.
+    let [hiL, loL] = paddedDomain(values);
+    let [hiR, loR] = paddedDomain(cumulative);
+    [loL, loR] = sharedZeroLo(hiL, loL, hiR, loR);
     const scale = (hi, lo) => v => pt + ih * (hi - v) / (hi - lo);
     const yL = scale(hiL, loL);
     const yR = scale(hiR, loR);
     const band = iw / keys.length;
     const cx = i => pl + band * (i + 0.5);
     const barW = Math.max(6, Math.min(12, band - 6));
-    const zeroL = yL(0);
+    const zeroY = yL(0); // === yR(0) after sharedZeroLo
+    const skip = Math.max(1, Math.ceil(48 / band)); // thin x labels below a ~48-unit band
     const multiYear = state.year === 'all' && new Set(keys.map(k => k.slice(0, 4))).size > 1;
     let out = '';
-    // left grid/labels follow the interest bars (green), right follow the running line
-    for (const v of [hiL, 0, loL]) {
+    // left grid/labels follow the interest bars (green), right follow the running line;
+    // the shared $0 line is neutral and drawn once.
+    const zeroYs = zeroY.toFixed(1);
+    out += `<line class="grid" x1="${pl}" y1="${zeroYs}" x2="${W - pr}" y2="${zeroYs}" stroke="currentColor" stroke-opacity="0.5" />`;
+    out += `<text class="label label--left" x="${pl - 8}" y="${(+zeroYs + 3).toFixed(1)}" text-anchor="end">${fmtCompact(0)}</text>`;
+    out += `<text class="label label--right" x="${W - pr + 8}" y="${(+zeroYs + 3).toFixed(1)}" text-anchor="start">${fmtCompact(0)}</text>`;
+    for (const v of [hiL, loL]) {
       const yy = yL(v).toFixed(1);
       out += `<line class="grid grid--left" x1="${pl}" y1="${yy}" x2="${W - pr}" y2="${yy}" stroke="currentColor" stroke-opacity="0.5" />`;
       out += `<text class="label label--left" x="${pl - 8}" y="${(+yy + 3).toFixed(1)}" text-anchor="end">${fmtCompact(v)}</text>`;
     }
-    for (const v of [hiR, 0, loR]) {
+    for (const v of [hiR, loR]) {
       const yy = yR(v).toFixed(1);
       out += `<line class="grid grid--right" x1="${pl}" y1="${yy}" x2="${W - pr}" y2="${yy}" stroke="currentColor" stroke-opacity="0.5" />`;
       out += `<text class="label label--right" x="${W - pr + 8}" y="${(+yy + 3).toFixed(1)}" text-anchor="start">${fmtCompact(v)}</text>`;
     }
     keys.forEach((k, i) => {
       const amount = values[i];
-      const top = amount >= 0 ? yL(amount) : zeroL;
-      const height = Math.max(1, Math.abs(yL(amount) - zeroL));
+      const top = amount >= 0 ? yL(amount) : zeroY;
+      const height = Math.max(1, Math.abs(yL(amount) - zeroY));
       const tip = barTipText(k, 'Interest', amount, cumulative[i]);
       if (state.month !== 'all' && k === `${state.year}-${state.month}`) {
         out += `<rect x="${(pl + band * i + 2).toFixed(1)}" y="${pt}" width="${(band - 4).toFixed(1)}" height="${ih}" rx="4" fill="currentColor" fill-opacity="0.05" />`;
       }
       // green = interest received that month, red = interest paid/fees dragging the month negative
       out += `<rect class="bar${amount < 0 ? ' bar--neg' : ''}" x="${(cx(i) - barW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${barW}" height="${height.toFixed(1)}" rx="2" fill="${amount >= 0 ? '#48BB78' : '#F56565'}" tabindex="0" data-tip="${esc(tip)}"><title>${esc(tip)}</title></rect>`;
-      out += `<text class="label" x="${cx(i).toFixed(1)}" y="${H - 16}" text-anchor="middle">${MONTH_NAMES[+k.slice(5, 7) - 1] || k}${multiYear ? " '" + k.slice(2, 4) : ''}</text>`;
+      out += xLabelMarkup(`${MONTH_NAMES[+k.slice(5, 7) - 1] || k}${multiYear ? " '" + k.slice(2, 4) : ''}`, cx(i), H - 16, i, skip);
     });
     out += `<polyline class="line" points="${keys.map((k, i) => `${cx(i).toFixed(1)},${yR(cumulative[i]).toFixed(1)}`).join(' ')}" fill="none" stroke="#3182CE" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`;
     for (let i = 0; i < keys.length; i++) {
@@ -1595,7 +1648,7 @@ const IBKR = (function () {
         bytes += p.bytes;
       });
       loadParsed(merged, name, bytes);
-    }).catch(err => showError(err && err.message ? err.message : 'Could not read that file.'));
+    }).catch(err => showError(err && err.message ? err.message : 'Could not read those files.'));
   }
 
   function restore() {
@@ -1657,7 +1710,7 @@ const IBKR = (function () {
     lsRemove(EXCLUDE_SCOPE_KEY);
     const input = byId('fileInput');
     if (input) input.value = '';
-    setFileLabel('No file selected');
+    setFileLabel('No files selected');
     showError('');
     renderAll();
     renderTickerList();
@@ -1917,8 +1970,13 @@ const IBKR = (function () {
       dialog.classList.add('modal--fallback');
       if (typeof document !== 'undefined' && document.body) document.body.classList.add('modal-fallback-open');
     }
-    const close = byId('csvHelpClose');
-    if (close && typeof close.focus === 'function') close.focus();
+    // Native showModal() focuses the first control (the footer Close, at the
+    // very bottom), which leaves the long help sheet scrolled to its end. Open
+    // at the steps instead: reset the scroll and focus the title (tabindex="-1"
+    // in index.html) rather than the Close button.
+    dialog.scrollTop = 0;
+    const title = byId('csvHelpTitle');
+    if (title && typeof title.focus === 'function') title.focus();
   }
   /** True while #csvHelpModal is open through the open-attribute fallback. */
   function csvHelpFallbackOpen() {
@@ -1957,7 +2015,8 @@ const IBKR = (function () {
   /**
    * Tab trap for shells that opened a dialog via the open attribute: wraps between
    * its first and last control. Native dialogs trap on their own, so this stays
-   * idle whenever showModal exists.
+   * idle whenever showModal exists. Shift+Tab from a focused non-control (the
+   * tabindex="-1" help title) lands on the last control instead of the page behind.
    */
   function trapFallbackTab(dialog, e) {
     if (typeof document === 'undefined') return;
@@ -1967,8 +2026,9 @@ const IBKR = (function () {
     if (!focusables.length) return;
     const first = focusables[0], last = focusables[focusables.length - 1], active = document.activeElement;
     const inside = !!(active && dialog.contains && dialog.contains(active));
-    if (e.shiftKey && (active === first || !inside)) { e.preventDefault(); if (last.focus) last.focus(); }
-    else if (!e.shiftKey && (active === last || !inside)) { e.preventDefault(); if (first.focus) first.focus(); }
+    const idx = Array.prototype.indexOf.call(focusables, active);
+    if (e.shiftKey && (idx <= 0 || !inside)) { e.preventDefault(); if (last.focus) last.focus(); }
+    else if (!e.shiftKey && (idx === focusables.length - 1 || !inside)) { e.preventDefault(); if (first.focus) first.focus(); }
   }
   /**
    * Keyboard fallback for shells that opened a dialog via the open attribute:
@@ -2253,7 +2313,7 @@ const IBKR = (function () {
     if (typeof window !== 'undefined') listen(window, 'resize', replacePopovers);
     syncFxInput();
     const label = byId('fileLabel');
-    if (label && !label.textContent.trim() && !hasData()) setFileLabel('No file selected');
+    if (label && !label.textContent.trim() && !hasData()) setFileLabel('No files selected');
   }
 
   function init() {

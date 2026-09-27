@@ -507,9 +507,15 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 .include-row .chips { flex: 0 0 auto; white-space: nowrap; }
 .include-row .chips { flex-wrap: nowrap; }
 
+/* Include/exclude ticker cluster. Fixed 320px (max-width caps it to the row on
+   viewports narrower than ~352px) — the toolbar keeps one outer size whether
+   #includeChips is empty or full, so applying or clearing tickers never
+   reflows the band. The .include-row scrolls its own overflow — chips stay on
+   one line and 0 0 auto. */
 #includeWrap {
-  flex: 1 1 260px;
-  max-width: 420px;
+  flex: 0 0 320px;
+  width: 320px;
+  max-width: min(320px, 100%);
   min-width: 0;
 }
 
@@ -887,6 +893,8 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
    and flatten the green/red bar encoding). */
 .chart .grid { stroke: var(--border); stroke-dasharray: 4 6; stroke-width: 1; }
 .chart .axis { stroke: var(--border); stroke-width: 1; }
+/* x-axis tick marks between thinned labels (21-month exports) */
+.chart .tick { stroke: var(--muted); stroke-width: 1; }
 .chart .chart__hint { fill: var(--muted); font-size: 13px; font-family: var(--font); }
 .chart .bar:not([fill]) { fill: var(--teal); }
 .chart .bar--neg:not([fill]) { fill: var(--red); }
@@ -1581,9 +1589,6 @@ body:has(dialog[open]) { overflow: hidden; }
   }
   .toolbar__inner::-webkit-scrollbar-thumb:hover { background: var(--muted); }
   .toolbar .field { flex: 0 0 auto; }
-  /* natural width (capped at the 420px design width) — without this the base
-     flex: 1 1 260px shrink squeezes the cluster when the row scrolls */
-  #includeWrap { flex: 0 0 auto; }
 }
 
 @media (max-width: 619px) {

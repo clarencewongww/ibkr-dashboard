@@ -30,10 +30,10 @@
                         #dropZone: app.js's dropZone click handler calls input.click()
                         unless the zone already contains the input, so any label inside
                         the zone would activate the chooser twice. The whole dashed zone
-                        (including the "Choose file" affordance, a non-interactive span)
+                        (including the "Choose File(s)" affordance, a non-interactive span)
                         is the click target through that handler.
              #dropZone  drop target — app.js toggles the class .is-dragover
-             #clearBtn  reset button · #csvHelpBtn round "i" beside Load CSV →
+             #clearBtn  reset button · #csvHelpBtn round "i" beside Load CSV(s) →
                         opens #csvHelpModal (native <dialog>, same wiring as
                         #tickerModal: app.js calls showModal/close, with an
                         open-attribute fallback for engines without showModal)
@@ -41,7 +41,7 @@
                         subtitle (with its own #heroCsvHelp .info-tip; focus
                         returns to whichever opener was used)
              #yearSelect app.js owns the <option> list ("all" = All years)
-             #fileLabel  file name text ("No file selected" / "<name> (cached)")
+             #fileLabel  file name text ("No files selected" / "<name> (cached)")
              these controls now live in the .toolbar band (moved off the dark hero
              gradient — ids unchanged, .toolbar colours rule in styles.css)
   Tabs       #tabBtnOverview / #tabBtnInterest — role=tab buttons inside nav.tabs
@@ -107,7 +107,10 @@
              styles.css owns .grid .grid--left/right .label .label--left/right
              .bar .bar--neg .line .dot .chart__hint; inline fill/stroke on
              .bar/.line win over the CSS fallbacks. Left axis (bars) = green,
-             right axis (running line + dots) = #3182CE (--chart-line) blue
+             right axis (running line + dots) = #3182CE (--chart-line) blue;
+             the dual-axis charts share one neutral $0 gridline (app.js re-expands
+             the flatter domain) and thin x labels to every skip-th month —
+             slanted -45° with .tick marks between — when a 21-month band crowds
   Tables     #monthlyTable > tbody#monthlyBody   cols: Month | Net P&L | Trades | Avg / trade
              #drillTable   > tbody#drillBody     cols: Symbol | Asset class | Trades | Net P&L
              #drillTitle   drill card heading
@@ -215,19 +218,19 @@
              label living inside the zone would activate the input twice. Here the
              toolbar label activates it natively and the zone uses the JS path. -->
         <input id="fileInput" class="visually-hidden" type="file" accept=".csv" multiple
-               aria-label="Load CSV" aria-describedby="fileLabel">
+               aria-label="Load CSV(s)" aria-describedby="fileLabel">
         <label class="btn btn--primary" for="fileInput">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
             <polyline points="17 8 12 3 7 8"></polyline>
             <line x1="12" y1="3" x2="12" y2="15"></line>
           </svg>
-          Load CSV
+          Load CSV(s)
         </label>
         <button id="csvHelpBtn" class="info" type="button"
                 aria-haspopup="dialog" aria-controls="csvHelpModal"
                 aria-label="How to export the CSV from IBKR">i</button>
-        <span id="fileLabel" class="file-label">No file selected</span>
+        <span id="fileLabel" class="file-label">No files selected</span>
         <button id="clearBtn" class="btn btn--ghost" type="button">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M18 6 6 18"></path>
@@ -254,7 +257,7 @@
 <main class="container page">
 
   <section class="stack" aria-label="Import status">
-    <section id="dropZone" class="dropzone" aria-label="Drop an IBKR CSV file here">
+    <section id="dropZone" class="dropzone" aria-label="Drop your IBKR CSV(s) here">
       <div id="emptyState" class="empty">
         <span class="empty__icon" aria-hidden="true">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -264,14 +267,14 @@
           </svg>
         </span>
         <h2 class="empty__title">Import your IBKR statement</h2>
-        <p class="empty__text">Drop your IBKR CSV here — data never leaves this browser.</p>
+        <p class="empty__text">Drop your IBKR CSV(s) here — data never leaves this browser.</p>
         <span class="btn btn--outline">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
             <polyline points="17 8 12 3 7 8"></polyline>
             <line x1="12" y1="3" x2="12" y2="15"></line>
           </svg>
-          Choose file
+          Choose File(s)
         </span>
         <p class="empty__meta">
           <svg class="icon icon--sm" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -675,12 +678,14 @@
   </footer>
 </dialog>
 
-<!-- CSV export help (opened by #csvHelpBtn beside Load CSV and by #heroCsvInfo in
+<!-- CSV export help (opened by #csvHelpBtn beside Load CSV(s) and by #heroCsvInfo in
      the hero subtitle). Same native <dialog> contract as #tickerModal: app.js
      drives showModal()/close(), Esc + backdrop are native, and the open-attribute
-     fallback covers engines without showModal. The steps mirror README §1. -->
+     fallback covers engines without showModal. app.js opens it at the top: scroll
+     0 + focus #csvHelpTitle (tabindex="-1"), not the bottom Close. The steps
+     mirror README §1. -->
 <dialog id="csvHelpModal" class="modal modal--help" aria-labelledby="csvHelpTitle">
-  <h2 class="modal__title" id="csvHelpTitle">Get the CSV from IBKR</h2>
+  <h2 class="modal__title" id="csvHelpTitle" tabindex="-1">Get the CSV from IBKR</h2>
   <ol class="help-steps">
     <li>
       <strong>Flex Query (preferred).</strong> Log in to Client Portal →

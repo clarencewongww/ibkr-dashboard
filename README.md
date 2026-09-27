@@ -26,7 +26,7 @@ drill-down. Everything runs in the browser: your file never leaves your machine.
    **Include Column Headers** and **Section Code** **ON**.
 4. Save the query, set **Period: Year to Date**, then **Run** / **Download** the file.
 5. Save the `.csv` anywhere on your machine — this app only reads it locally.
-   (The same steps are in the dashboard: click either round **i** — beside **Load CSV** or in
+   (The same steps are in the dashboard: click either round **i** — beside **Load CSV(s)** or in
    the header subtitle.)
 
 > **Freshness limits, by design:**
@@ -57,7 +57,7 @@ nothing has to stay open after the page appears.
 
 ### Option B — double-click (no server)
 
-Open `index.html` directly from Finder (works over `file://`) and pick your CSV with **Choose file**.
+Open `index.html` directly from Finder (works over `file://`) and pick your CSV(s) with **Choose File(s)**.
 All parsing is done with the browser's `FileReader`; no server, no upload.
 
 ### Option C — local HTTP server (recommended for a stable origin)
@@ -94,9 +94,12 @@ Multiple files are concatenated; do not load overlapping periods twice or totals
 The **Monthly realised P&L** card is dual-axis: the green/red bars scale to the monthly totals
 (**left** axis, green labels) and the blue running-total line scales to the cumulative series
 (**right** axis, blue labels) — a month far larger than the rest can no longer flatten the
-other series. Hover a bar for `May 2026 · Net $X · Running $Y`; the dots carry `May 2026 · Running
-$Y`. The legend marks the sides and matches the series: **Net P&L (left)** green, **Running total
-(right)** blue `#3182CE`.
+other series. Both axes pivot on one shared **$0**: the zero gridline is drawn once, neutral,
+and only the non-zero lines keep their side's colour. X labels thin themselves when 21 months
+would collide — every second month keeps its text, slanted −45°, with small tick marks between —
+while a 9-month export keeps all nine labels centred. Hover a bar for `May 2026 · Net $X ·
+Running $Y`; the dots carry `May 2026 · Running $Y`. The legend marks the sides and matches the
+series: **Net P&L (left)** green, **Running total (right)** blue `#3182CE`.
 
 On desktop the four Overview cards form two columns — **chart + Income breakdown** on the left
 (1.55fr) and **Monthly summary + drill-down** on the right (1fr); each column is an independent
@@ -207,8 +210,9 @@ mirror of Exclude, using the same case-insensitive root-symbol matching and pers
   (`#tickerSearchClear`) clears the query.
 - **Chips.** Every included root appears as a pressed chip next to the button, labelled with its
   scope while scoped (`AMD (Options only)`); click a chip to drop that ticker from the allow-list.
-  The cluster stays on **one line**: chips scroll horizontally inside the toolbar row and the
-  `#filterNote` summary ellipsises long lists (its `title` carries the full text). Below 1180px the
+  The cluster keeps a **fixed 320px width** — applying or clearing chips never reflows the
+  toolbar — and stays on one line inside it: chips scroll horizontally and the `#filterNote`
+  summary ellipsises long lists (its `title` carries the full text). Below 1180px the
   toolbar wraps rather than clipping; from 1180px the row scrolls and keeps a thin scrollbar
   instead of hiding the overflow.
 - **Jump back.** Both the Monthly summary header and the drill-down header carry a **Tickers ↑**
