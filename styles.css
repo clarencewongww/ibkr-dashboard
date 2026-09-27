@@ -282,7 +282,8 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 /* hero subtitle: inline "i" (#heroCsvInfo) that opens #csvHelpModal — same .info
    language inverted for the dark gradient. Its #heroCsvHelp tip opens upward,
    inside the hero, so it never fights the sticky toolbar's stacking order;
-   app.js clamps it horizontally on reveal (placeHeroCsvTip) like #basisInfo. */
+   app.js clamps it on reveal (placeHeroCsvTip): horizontally like #basisInfo and
+   vertically to the viewport, since the hero's 10px padding leaves no room above. */
 .hero__sub-note {
   position: relative;
   display: inline-flex;

@@ -988,24 +988,58 @@ const IBKR = (function () {
   /**
    * Keep an absolutely positioned popover (right-anchored by CSS) inside the
    * viewport. Called on the anchor's reveal events, so it only ever nudges the
-   * popover's `right` offset: negative moves it right, positive moves it left.
+   * popover's own offsets: horizontally `right` (negative moves it right,
+   * positive moves it left) and vertically `top` when the box would poke above
+   * the viewport. The upward-opening tips (#heroCsvHelp above the hero's 10px
+   * padding, #fxDetail in the pinned footer strip) otherwise start at a negative
+   * viewport y and lose their first lines. Flipping below is deliberately not an
+   * option: the toolbar is sticky at z-index 15, above the hero's stacking
+   * context, so a flipped hero tip would be half-buried under it. Clamp into view.
    * Used by #basisHelp (.info-tip), #heroCsvHelp (.info-tip) and #fxDetail (.fx-detail).
    */
   function clampPopover(anchor, popover) {
     if (!anchor || !popover || !popover.getBoundingClientRect) return;
     if (typeof document === 'undefined' || !document.documentElement) return;
+    // Drop the previous reveal's clamp first so the box is measured at its CSS
+    // anchor position (and repeat calls cannot accumulate).
     popover.style.right = '0';
+    popover.style.top = '';
+    popover.style.bottom = '';
     const docW = document.documentElement.clientWidth;
-    const box = popover.getBoundingClientRect();
+    let box = popover.getBoundingClientRect();
     const overLeft = 4 - box.left;
     const overRight = box.right - (docW - 4);
     if (overLeft > 0 && box.width <= docW - 8) popover.style.right = (-Math.ceil(overLeft)) + 'px';
     else if (overRight > 0) popover.style.right = Math.ceil(overRight) + 'px';
+    // Vertical clamp: pin the box 4px below the viewport top when it overflows.
+    // Shift via `top` (the offset whose containing block is the positioned
+    // ancestor's padding box) so the CSS `bottom` anchor is replaced by an
+    // explicit position. The ancestor's own viewport top is re-read here; the
+    // popover's offsetTop would drop to its static position the moment `bottom`
+    // is cleared, so it cannot be used for the arithmetic.
+    box = popover.getBoundingClientRect();
+    const parent = popover.offsetParent;
+    if (box.top < 4 && parent) {
+      const parentStyle = getComputedStyle(parent);
+      const parentTop = parent.getBoundingClientRect().top + (parseFloat(parentStyle.borderTopWidth) || 0);
+      popover.style.bottom = 'auto';
+      popover.style.top = (4 - parentTop) + 'px';
+    }
   }
   function placeBasisTip() { clampPopover(byId('basisInfo'), byId('basisHelp')); }
   function placeIncomeTip() { clampPopover(byId('incomeInfo'), byId('incomeHelp')); }
   function placeFxDetail() { clampPopover(byId('fxBadge'), byId('fxDetail')); }
   function placeHeroCsvTip() { clampPopover(byId('heroCsvInfo'), byId('heroCsvHelp')); }
+  /* A clamp is only valid for the viewport it was measured in — the hero tip
+     hangs off the hero's own height — so a resize/zoom under a revealed tip
+     must be remeasured (place* is idempotent: it re-anchors, then clamps).
+     Hidden popovers just get their CSS anchor back; the next reveal remeasures. */
+  function replacePopovers() {
+    placeBasisTip();
+    placeIncomeTip();
+    placeFxDetail();
+    placeHeroCsvTip();
+  }
 
   function renderChart(months) {
     const svg = byId('chartSvg');
@@ -2215,6 +2249,8 @@ const IBKR = (function () {
     listen(byId('fxReset'), 'click', onFxResetClick);
     listen(byId('fxBadge'), 'mouseenter', placeFxDetail);
     listen(byId('fxBadge'), 'focusin', placeFxDetail);
+    // remeasure all four popovers on viewport changes (idempotent; hidden ones re-anchor)
+    if (typeof window !== 'undefined') listen(window, 'resize', replacePopovers);
     syncFxInput();
     const label = byId('fileLabel');
     if (label && !label.textContent.trim() && !hasData()) setFileLabel('No file selected');
