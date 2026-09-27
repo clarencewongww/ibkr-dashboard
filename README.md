@@ -220,8 +220,10 @@ mirror of Exclude, using the same case-insensitive root-symbol matching and pers
   chip (`#includeMore`), whose `title` lists every included symbol and which opens the picker for
   the complete list. It is a real button: **Tab** reaches it, **Enter/Space** open the same picker,
   closing the dialog hands focus back to it, and every time the chip hides its `title`/`aria-label`
-  are cleared so no stale symbol list lingers. The `#filterNote` summary (11px) ellipsises long
-  lists and mirrors the full text into its `title`. The toolbar itself flex-wraps at every width —
+  are cleared so no stale symbol list lingers. The `#filterNote` summary (11px) rides inline in the
+  ticker row after the `+n` slot, ellipsising its text and mirroring the full string into `title`;
+  app.js renders it before measuring the `+n` count, so the note's width is accounted for. The
+  toolbar itself flex-wraps at every width —
   one slim row while the controls fit, extra lines when they do not (3 rows at 768px, 4 at 375px) —
   so nothing is ever clipped or parked behind an overflow. Below 620px the toolbar also carries a
   **Controls** fold (`#toolbarToggle`, its first child): tapping it collapses the whole row to one

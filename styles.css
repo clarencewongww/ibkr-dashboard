@@ -570,6 +570,15 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   text-overflow: ellipsis;
 }
 
+/* Inline in .include-row (after the '+n' slot): the note rides the row's flex
+   line, so it takes only the leftover width beside the fixed 320px cluster,
+   shrinks to fit (min-width:0) and ellipsises instead of forcing a wrap. */
+.include-row #filterNote {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-top: 0;
+}
+
 .file-label {
   max-width: 200px;
   overflow: hidden;

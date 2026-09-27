@@ -1589,11 +1589,18 @@ const IBKR = (function () {
    * it and writes the count into the chip; its title/aria-label carry the full list
    * and data-open-tickers opens the picker (#tickerModal). It is a real <button>, so
    * Tab reaches it and Enter/Space activate the same click path; the dialog wiring
-   * hands focus back to it on close. Two passes because the chip's own label takes
-   * room from the row; it no-ops while the cluster is empty or unlaid-out (zero
-   * width), and re-runs on window resize, since the toolbar's wrapped width decides
-   * how many chips fit. Every hide path also clears title/aria-label, so a stale
-   * symbol list never lingers on the hidden chip.
+   * hands focus back to it on close. The first snapshot is taken from the bare row
+   * (label cleared) and the label's own width is only reserved from the second pass
+   * on — a stale "+n" must never invent room against the chips. It no-ops while the
+   * cluster is empty or unlaid-out (zero width), and re-runs on window resize, since
+   * the toolbar's wrapped width decides how many chips fit. renderAll() renders
+   * #filterNote (the inline note that shares this row) before this pass, so the
+   * note's width is already spent when the clip is measured. Hiding the tail lets
+   * the note flex wider though, so a final settle pass re-checks the survivors
+   * against the clip's settled edge and folds any it now cuts off into the count
+   * (visible chips + "+n" must always add up to the include list). Every hide path
+   * also clears title/aria-label, so a stale symbol list never lingers on the
+   * hidden chip.
    */
   function measureIncludeOverflow() {
     const el = byId('includeChips');
@@ -1608,9 +1615,10 @@ const IBKR = (function () {
     const chips = Array.prototype.slice.call(el.querySelectorAll('button[data-ticker]'));
     if (!chips.length) { hideMore(); return; }
     let count = 0;
+    hideMore(); // measure from the bare row; the label's width is reserved from pass 1
     for (let pass = 0; pass < 3; pass++) {
       for (const chip of chips) chip.hidden = false;
-      more.hidden = false;
+      if (pass) more.hidden = false;
       const right = el.getBoundingClientRect().right;
       if (!right) { // not laid out — never clip blind
         for (const chip of chips) chip.hidden = false;
@@ -1625,7 +1633,25 @@ const IBKR = (function () {
       }
       if (clipped === count) break; // the row is stable at this label width
       count = clipped;
-      more.textContent = '+' + count; // reserve the real width for the next pass
+      if (count) more.textContent = '+' + count; // reserve the real width for the next pass
+    }
+    // The inline note keeps flexing once the tail chips hide — its width feeds the
+    // row's overflow — so a chip that fit the measured clip can sit under the
+    // settled one. Re-check the survivors and count the ones the clip now cuts off.
+    for (let pass = 0; pass < 8; pass++) {
+      const right = el.getBoundingClientRect().right;
+      if (!right) break;
+      let moved = 0;
+      for (let i = chips.length - 1; i >= 0; i--) {
+        const chip = chips[i];
+        if (chip.hidden) continue;
+        if (chip.getBoundingClientRect().right <= right + 0.5) break;
+        chip.hidden = true;
+        moved++;
+      }
+      if (!moved) break;
+      count += moved;
+      more.textContent = '+' + count;
     }
     if (!count) { hideMore(); return; }
     const label = `${count} more included ticker${count === 1 ? '' : 's'}`;
@@ -1727,8 +1753,8 @@ const IBKR = (function () {
     renderBreakdown(months);
     renderInterest(months);
     renderTables(months);
+    renderFilterNote(); // first: the inline note's width is part of the row the '+n' clip measures
     renderIncludeChips();
-    renderFilterNote();
     renderTickerCount();
     renderFxBadge();
     const empty = byId('emptyState');

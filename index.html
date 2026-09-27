@@ -81,14 +81,17 @@
              aria-pressed="true" (its label/title name the scope); click removes the
              include. #includeWrap groups the Tickers button with those chips,
              #includeMore ("+n") and #filterNote (aria-live="polite" summary of the
-             active ticker filters, scopes included). No-scrollbar contract: the
+             active ticker filters, scopes included) inline in .include-row after
+             the '+n' slot. No-scrollbar contract: the
              320px cluster never scrolls or wraps — .include-row/#includeChips clip
              (overflow:hidden), app.js hides the chips that do not fit and counts
              them in '+n' #includeMore (title = full list, click opens the picker);
              that chip is a real button — Tab reaches it, Enter/Space open the same
              picker and the dialog hands focus back to it on close — and its
-             title/aria-label are cleared whenever it hides. #filterNote is 11px
-             and ellipsises long lists, mirroring the full string into title=.
+             title/aria-label are cleared whenever it hides. #filterNote is 11px,
+             shrinks into the row's leftover width and ellipsises long lists,
+             mirroring the full string into title=; app.js renders the note
+             before measuring the '+n' count, so its width narrows the chips.
              .toolbar__inner (#toolbarInner) flex-wraps at every width (no
              scroller, no hidden-scrollbar trick); the band keeps its height.
              Below 620px #toolbarToggle (.toolbar__toggle, its first child)
@@ -288,8 +291,10 @@
         <button id="includeMore" class="chip chip--more" type="button"
                 aria-haspopup="dialog" aria-controls="tickerModal"
                 data-open-tickers hidden></button>
+        <!-- Inline in the row (after the '+n' slot) so the note shares the 320px
+             cluster's line; app.js renders it before measuring the clip. -->
+        <p id="filterNote" class="filter-note" aria-live="polite" hidden></p>
       </div>
-      <p id="filterNote" class="filter-note" aria-live="polite" hidden></p>
     </div>
 
     <!-- PWA install: hidden until Chromium offers beforeinstallprompt (app.js
