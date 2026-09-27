@@ -96,12 +96,11 @@ The **Monthly realised P&L** card is dual-axis: the green/red bars scale to the 
 (**right** axis, blue labels) — a month far larger than the rest can no longer flatten the
 other series. Both axes pivot on one shared **$0**: the zero gridline is drawn once, neutral,
 and only the non-zero lines keep their side's colour. X labels stay horizontal, centred on their
-month, and thin themselves live from the number of visible months — never a fixed 9/21: while a
-band clears the ~56-unit label budget every month keeps its text, and once it does not every
-2nd/3rd/… month keeps it, with a small 10-unit tick mark in each label-less slot. A 9-month
-export still shows all nine labels centred; multi-year ranges spell the year (`Sep '25`) and
-thin a little coarser because those labels are wider. The same live step drives the Income
-breakdown and Interest charts, so all three thin and tick identically. Hover a bar for
+month, with no tick marks: one label every `ceil(64 / band)` months — coarser only when the
+measured glyph plus its air needs more room — and the last month always carries a label, so the
+row closes on the right. A 9-month export still shows all nine labels centred; multi-year ranges
+spell the year (`Sep '25`) and space out a little further because those labels are wider. The
+same live step drives the Income breakdown and Interest charts, so all three thin identically. Hover a bar for
 `May 2026 · Net $X · Running $Y`; the dots carry `May 2026 · Running $Y`. The legend marks the
 sides and matches the series: **Net P&L (left)** green, **Running total (right)** blue
 `#3182CE`.
@@ -337,12 +336,24 @@ workers need http/https, so always install from the launcher's URL, not from a F
 
 1. Start the dashboard with **`IBKR P&L Dashboard.app`** (or `./Start-Dashboard.sh`) so the page is open
    at `http://127.0.0.1:8000/index.html`.
-2. Brave menu → **Cast, save, and share** → **Install page as app…** (older builds: *Save and share →
-   Install…*, or the install icon in the omnibox). Name it **IBKR P&L** and confirm.
+2. Watch the toolbar: once the manifest + service worker qualify, Chromium fires its install prompt
+   and the **Install app** button appears there (typically within ~30 seconds of the first load —
+   if it is late, wait half a minute and click it again; each captured prompt is single-use).
+   Click it → **Install**. No button at all (prompt dismissed, already installed, or a non-Chromium
+   browser)? Use the menu: **Cast, save, and share** → **Install page as app…** (older builds:
+   *Save and share → Install…*, or the install icon in the omnibox). Name it **IBKR P&L** and
+   confirm.
 3. Manage or remove installed apps from **`brave://apps`**; their bundles also live under
    `~/Applications/Brave Browser Apps.localized/`.
 4. Launch it from Launchpad/Applications as usual — it opens standalone, without browser chrome, and
    still opens when the local server is down (next section).
+
+> **Install button missing?** Chromium only offers the prompt while the page is not already
+> installed. Remove a stale install in **`brave://apps`**, then clear the site's cached data —
+> **`brave://settings/content/all`** → `127.0.0.1:8000` → delete (or DevTools → **Application →
+> Storage → Clear site data**) — reload, and wait ~30 seconds: the service worker re-registers
+> (`ibkr-shell-v2`) and the button comes back. **iOS/Safari:** there is no install prompt at all —
+> use **Share → Add to Home Screen**.
 
 > **Already installed from an earlier build?** The PWA icons changed, but an existing install keeps
 > its cached copies. Remove the old **IBKR P&L** app in **`brave://apps`** (its bundle also sits under

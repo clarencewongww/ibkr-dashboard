@@ -46,6 +46,10 @@
                         returns to whichever opener was used)
              #yearSelect app.js owns the <option> list ("all" = All years)
              #fileLabel  file name text ("No files selected" / "<name> (cached)")
+             #installBtn app.js-owned PWA affordance in the toolbar band: hidden in
+                        the shell, revealed by beforeinstallprompt, hidden again on
+                        click/userChoice and on appinstalled (browsers that never
+                        fire the event — Safari/iOS — simply never show it)
              these controls now live in the .toolbar band (moved off the dark hero
              gradient — ids unchanged, .toolbar colours rule in styles.css)
   Tabs       #tabBtnOverview / #tabBtnInterest — role=tab buttons inside nav.tabs
@@ -125,9 +129,10 @@
              right axis (running line + dots) = #3182CE (--chart-line) blue;
              the dual-axis charts share one neutral $0 gridline (app.js re-expands
              the flatter domain) and thin x labels to every skip-th month — always
-             horizontal + middle-anchored on the band centre, with a 10-unit .tick
-             between — the step comes from xLabelSkip(), computed live from the
-             visible month count on all three charts (never a hardcoded 9/21)
+             horizontal + middle-anchored on the band centre, no ticks, and the
+             last month always carries a label — the step comes from xLabelPlan()
+             (64-unit conventional spacing; measured glyph width once laid out),
+             live on all three charts, never a hardcoded 9/21
   Tables     #monthlyTable > tbody#monthlyBody   cols: Month | Net P&L | Trades | Avg / trade
              #drillTable   > tbody#drillBody     cols: Symbol | Asset class | Trades | Net P&L
              #drillTitle   drill card heading
@@ -286,6 +291,19 @@
       </div>
       <p id="filterNote" class="filter-note" aria-live="polite" hidden></p>
     </div>
+
+    <!-- PWA install: hidden until Chromium offers beforeinstallprompt (app.js
+         stashes it, reveals this button and prompts once on click; userChoice and
+         appinstalled hide it again). Safari/iOS never fire the event, so there the
+         README's Add to Home Screen path stays manual. -->
+    <button id="installBtn" class="btn btn--outline" type="button" hidden>
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="17 8 12 3 7 8"></polyline>
+        <line x1="12" y1="3" x2="12" y2="15"></line>
+      </svg>
+      Install app
+    </button>
 
   </div>
 </section>

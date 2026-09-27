@@ -30,9 +30,9 @@
  * X labels: xLabelPlan() measures the widest label each chart will actually draw
  * (probe <text class="label"> inside the live svg, so the card's container-query
  * font is what gets measured) on all three charts — chartSvg, interestSvg,
- * breakdownSvg. Horizontal, middle-anchored labels every skip-th month, plus a
- * 10-unit .tick drawn below the baseline in the thinned slots; a tick whose slot
- * is too close to a drawn label is dropped instead of striking it. Never rotated,
+ * breakdownSvg. Horizontal, middle-anchored labels every Nth month, one label per
+ * ceil(64 / band) months (coarser only when the measured glyph needs more), with
+ * the last month always labelled and no ticks in the thinned slots. Never rotated,
  * never a hardcoded 9/21.
  *
  * Hosting: the shell is sub-path safe for the GitHub Pages copy (relative refs,
@@ -980,9 +980,10 @@ const IBKR = (function () {
    */
   const X_LABEL_BUDGET = 56;
   const X_LABEL_BUDGET_YEAR = 100;
-  /** ViewBox units of air kept between two drawn labels, and around a tick's no-go zone. */
+  /** ViewBox units of air kept between two drawn labels. */
   const X_LABEL_AIR = 12;
-  const X_LABEL_MARGIN = 4;
+  /** Conventional label spacing: one label per ceil(X_LABEL_SPACING / band) months. */
+  const X_LABEL_SPACING = 64;
   const SVG_NS = 'http://www.w3.org/2000/svg';
 
   /** Month name for a 'yyyy-MM' key ("Sep"), falling back to the raw key for odd input. */
@@ -1040,38 +1041,38 @@ const IBKR = (function () {
   }
 
   /**
-   * One x row's geometry: the worst-case label width above, the stride that keeps two
-   * drawn labels X_LABEL_AIR apart (live from keys.length — any 1 to 60+, never a
-   * hardcoded 9/21), and the half width a tick has to stay clear of. The stride spends
-   * its budget on labels only; ticks are dropped separately, so ticks can never crowd
-   * two labels into each other.
+   * One x row's geometry: the widest label this chart will draw (measured live, the
+   * static budget when the card is hidden), the conventional stride — one label every
+   * ceil(64 / band) months, coarser only when the measured glyph + air needs more —
+   * and the index of the last month, which always carries a label so the row closes
+   * on the right. Live from keys.length (any 1 to 60+, never a hardcoded 9/21).
    */
   function xLabelPlan(svg, keys, band, multiYear) {
-    const width = xLabelWidth(svg, keys, multiYear) || (multiYear ? X_LABEL_BUDGET_YEAR : X_LABEL_BUDGET);
+    const measured = xLabelWidth(svg, keys, multiYear);
+    const width = measured || (multiYear ? X_LABEL_BUDGET_YEAR : X_LABEL_BUDGET);
     return {
       band: band,
       width: width,
-      skip: Math.max(1, Math.ceil((width + X_LABEL_AIR) / band)),
-      half: width / 2 + X_LABEL_MARGIN
+      skip: Math.max(1, Math.ceil(Math.max(width + X_LABEL_AIR, X_LABEL_SPACING) / band)),
+      last: keys.length - 1
     };
   }
 
   /**
-   * One x-axis month slot: a horizontal, middle-anchored label on every skip-th month's
-   * centre, a 10-unit .tick in the thinned slots. Ticks run DOWN from the label baseline
-   * (away from the glyph ink, which sits above it) and are dropped when their slot is
-   * closer to a drawn label than that label's half width + X_LABEL_MARGIN, so a tick can
-   * neither strike a label nor hang under one. No rotate() branch — every drawn label
-   * reads left to right.
+   * One x-axis month slot: a horizontal, middle-anchored text on every skip-th month's
+   * centre, plus the last month, which is always labelled so the row closes on the
+   * right. Thinned slots draw nothing — no tick, no rotate() branch; every drawn label
+   * reads left to right. A stride label is dropped when the forced last label would sit
+   * closer to it than X_LABEL_AIR + the measured width, so the closing pair can never
+   * collide.
    */
   function xLabelMarkup(label, x, y, i, plan) {
-    const at = x.toFixed(1);
-    if (i % plan.skip === 0) {
-      return `<text class="label" x="${at}" y="${y}" text-anchor="middle">${label}</text>`;
+    const isLast = i === plan.last;
+    if (!isLast) {
+      if (i % plan.skip !== 0) return '';
+      if ((plan.last - i) * plan.band < plan.width + X_LABEL_AIR) return '';
     }
-    const off = i % plan.skip;
-    if (Math.min(off, plan.skip - off) * plan.band < plan.half) return '';
-    return `<line class="tick" x1="${at}" y1="${y}" x2="${at}" y2="${y + 10}" stroke="currentColor" />`;
+    return `<text class="label" x="${x.toFixed(1)}" y="${y}" text-anchor="middle">${label}</text>`;
   }
 
   // chart hooks: .bar / .bar--neg / .line / .dot / .tick / .label are styled by styles.css
@@ -1213,8 +1214,8 @@ const IBKR = (function () {
     const barW = Math.max(6, Math.min(12, band - 6));
     const zeroY = yL(0); // === yR(0) after sharedZeroLo
     const multiYear = state.year === 'all' && new Set(keys.map(k => k.slice(0, 4))).size > 1;
-    // x row measured from this card's live .label font: narrow cards get coarser
-    // labels and their ticks are thinned out instead of striking the glyphs
+    // x row measured from this card's live .label font: narrow cards space the
+    // labels out further (last month always labelled); thinned slots stay empty
     const xPlan = xLabelPlan(svg, keys, band, multiYear);
     let out = '';
     // Grid + labels track each axis: left (bars) in green, right (running total)
@@ -1298,8 +1299,8 @@ const IBKR = (function () {
     const cx = i => pl + band * (i + 0.5);
     const barW = Math.max(6, Math.min(12, band - 6));
     const multiYear = state.year === 'all' && new Set(keys.map(k => k.slice(0, 4))).size > 1;
-    // x row measured from this card's live .label font: narrow cards get coarser
-    // labels and their ticks are thinned out instead of striking the glyphs
+    // x row measured from this card's live .label font: narrow cards space the
+    // labels out further (last month always labelled); thinned slots stay empty
     const xPlan = xLabelPlan(svg, keys, band, multiYear);
     let out = '';
     for (const v of [hi, 0, lo]) {
@@ -1438,8 +1439,8 @@ const IBKR = (function () {
     const barW = Math.max(6, Math.min(12, band - 6));
     const zeroY = yL(0); // === yR(0) after sharedZeroLo
     const multiYear = state.year === 'all' && new Set(keys.map(k => k.slice(0, 4))).size > 1;
-    // x row measured from this card's live .label font: narrow cards get coarser
-    // labels and their ticks are thinned out instead of striking the glyphs
+    // x row measured from this card's live .label font: narrow cards space the
+    // labels out further (last month always labelled); thinned slots stay empty
     const xPlan = xLabelPlan(svg, keys, band, multiYear);
     let out = '';
     // left grid/labels follow the interest bars (green), right follow the running line;
@@ -2255,7 +2256,18 @@ const IBKR = (function () {
       btn.setAttribute('aria-selected', active ? 'true' : 'false');
       btn.setAttribute('tabindex', active ? '0' : '-1');
     }
-    tabPanels().forEach((el, panelName) => { el.hidden = panelName !== tab; });
+    const panels = tabPanels();
+    panels.forEach((el, panelName) => { el.hidden = panelName !== tab; });
+    // The Interest card renders hidden until its tab opens, so its first pass could
+    // not measure the .label font (display:none) and kept the static 56/100 budget.
+    // Flush the freshly unhidden panel's layout, then re-render: the first
+    // measurement of a never-laid-out subtree otherwise still reads 0.
+    // Tab keys are uppercased by tabKeyOf(); compare case-insensitively.
+    if (String(tab).toLowerCase() === 'interest' && state.months) {
+      const panel = panels.get(tab);
+      if (panel) void panel.offsetWidth; // forces style+layout so the probe can measure
+      renderInterest(state.months);
+    }
     if (!suppressHash && typeof history !== 'undefined' && history && history.replaceState && typeof location !== 'undefined') {
       const want = '#' + tab.toLowerCase();
       if (String(location.hash || '') !== want) history.replaceState(null, '', want);
@@ -2430,6 +2442,45 @@ const IBKR = (function () {
     renderAll();
   }
 
+  // ---------------------------------------------------------- install prompt
+
+  /** Chromium's captured beforeinstallprompt (single-use); null once spent/hidden. */
+  let installEvent = null;
+  /**
+   * PWA install affordance. Chromium fires beforeinstallprompt once the shell
+   * qualifies (http(s) + manifest + an active service worker): the event is stashed,
+   * its mini-infobar suppressed, and #installBtn revealed. A click hands the stashed
+   * event to prompt() exactly once; userChoice — or appinstalled — retires the button.
+   * Browsers that never fire the event (Safari/iOS) keep it hidden, since the shell
+   * ships it with [hidden].
+   */
+  function setInstallBtnHidden(hidden) {
+    const btn = byId('installBtn');
+    if (btn) btn.hidden = hidden === true;
+  }
+  function onBeforeInstallPrompt(e) {
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
+    installEvent = e || null;
+    setInstallBtnHidden(!installEvent);
+  }
+  function onInstallClick() {
+    const ev = installEvent;
+    installEvent = null; // single-use: a second click can never prompt twice
+    if (!ev) { setInstallBtnHidden(true); return; }
+    let choice = null;
+    try {
+      if (typeof ev.prompt === 'function') ev.prompt();
+      choice = ev.userChoice || null;
+    } catch (err) { choice = null; } // prompt() throws when the event was already used
+    const retire = function () { setInstallBtnHidden(true); };
+    if (choice && typeof choice.then === 'function') choice.then(retire, retire);
+    else retire();
+  }
+  function onAppInstalled() {
+    installEvent = null;
+    setInstallBtnHidden(true);
+  }
+
   function wire() {
     listen(byId('fileInput'), 'change', onFileChange);
     listen(byId('dropZone'), 'dragover', onDragOver);
@@ -2439,6 +2490,12 @@ const IBKR = (function () {
     listen(byId('dropZone'), 'click', onZoneClick);
     listen(byId('clearBtn'), 'click', clearAll);
     listen(byId('toolbarToggle'), 'click', onToolbarToggle);
+    // PWA install affordance (Chromium only; the button stays hidden elsewhere)
+    listen(byId('installBtn'), 'click', onInstallClick);
+    if (typeof window !== 'undefined') {
+      listen(window, 'beforeinstallprompt', onBeforeInstallPrompt);
+      listen(window, 'appinstalled', onAppInstalled);
+    }
     listen(byId('yearSelect'), 'change', onYearChange);
     listen(byId('monthChips'), 'click', onChipClick);
     listen(byId('monthlyBody'), 'click', onRowClick);
