@@ -26,10 +26,13 @@
  * and the [data-tab]-driven Overview/Interest tabs. All of those are optional:
  * every lookup is null-safe so the script survives an older shell.
  *
- * X labels: the step is computed live by xLabelSkip() from the visible month
- * count on all three charts (chartSvg, interestSvg, breakdownSvg) — horizontal,
- * middle-anchored labels plus a 10-unit .tick in every thinned slot, never
- * rotated and never a hardcoded 9/21.
+ * X labels: xLabelPlan() measures the widest label each chart will actually draw
+ * (probe <text class="label"> inside the live svg, so the card's container-query
+ * font is what gets measured) on all three charts — chartSvg, interestSvg,
+ * breakdownSvg. Horizontal, middle-anchored labels every skip-th month, plus a
+ * 10-unit .tick drawn below the baseline in the thinned slots; a tick whose slot
+ * is too close to a drawn label is dropped instead of striking it. Never rotated,
+ * never a hardcoded 9/21.
  *
  * Hosting: the shell is sub-path safe for the GitHub Pages copy (relative refs,
  * manifest ./ scope, sw.js resolves its allowlist from its own URL), and
@@ -966,38 +969,107 @@ const IBKR = (function () {
   }
 
   /**
-   * X-label budget in viewBox units: a horizontal "Sep" fills ~36 at the biggest
-   * .label size styles.css switches in (24px) and ~20 at the desktop 11px, so 56
-   * is the shared floor with air on both sides. The multi-year "Sep '25" adds the
-   * ~45-unit " 'YY" suffix on top of the widest month name, hence 100 for those
-   * bands. Nothing is ever rotated.
+   * X-label budget in viewBox units, used only when nothing can be measured (no DOM
+   * in Node tests, or a hidden card like the Interest tab before its first show):
+   * "Sep" fills ~42 at the biggest .label size styles.css switches in (24px) and
+   * "Sep '25" ~81, so 56/100 keep their air. Real renders measure instead — see
+   * xLabelWidth() — because the drawn width depends on the card's container-query
+   * font, which no static number can track. Nothing is ever rotated.
    */
   const X_LABEL_BUDGET = 56;
   const X_LABEL_BUDGET_YEAR = 100;
+  /** ViewBox units of air kept between two drawn labels, and around a tick's no-go zone. */
+  const X_LABEL_AIR = 12;
+  const X_LABEL_MARGIN = 4;
+  const SVG_NS = 'http://www.w3.org/2000/svg';
 
-  /**
-   * Months between drawn x labels for a band this wide. Derived live from the
-   * visible month count — any 1 to 60+, so never a hardcoded 9/21 — and rounded
-   * up so neighbouring horizontal labels keep the budget above. Coarser only
-   * when the range spans years, because "Sep '25" is wider than "Sep".
-   */
-  function xLabelSkip(band, multiYear) {
-    const budget = multiYear ? X_LABEL_BUDGET_YEAR : X_LABEL_BUDGET;
-    return Math.max(1, Math.ceil(budget / band));
+  /** Month name for a 'yyyy-MM' key ("Sep"), falling back to the raw key for odd input. */
+  function xLabelName(key) {
+    return MONTH_NAMES[+key.slice(5, 7) - 1] || key;
+  }
+
+  /** The x label one month key draws: "Sep", or "Sep '25" when the range spans years. */
+  function xLabelText(key, multiYear) {
+    return `${xLabelName(key)}${multiYear ? " '" + key.slice(2, 4) : ''}`;
   }
 
   /**
-   * One x-axis month slot: a horizontal, middle-anchored label on every skip-th
-   * month's centre, a 10-unit tick mark in between. No rotate() branch — the
-   * diagonal variant is gone, so every drawn label reads left to right and
-   * nothing hangs below the axis.
+   * Width of the widest x label this chart will draw, in viewBox units, measured with a
+   * throwaway <text class="label"> inside the live svg: styles.css sizes .label per card
+   * (container query 11 -> 24px), so a probe inherits exactly the font that will be drawn
+   * and getComputedTextLength() already answers in user units — no card-width maths and
+   * no hardcoded breakpoints. Returns 0 when there is nothing to measure (no DOM, or a
+   * display:none card), and the caller keeps the static budget.
    */
-  function xLabelMarkup(label, x, y, i, skip) {
+  function xLabelWidth(svg, keys, multiYear) {
+    if (!svg || !svg.appendChild || typeof document === 'undefined' || !document.createElementNS) return 0;
+    const probe = document.createElementNS(SVG_NS, 'text');
+    probe.setAttribute('class', 'label');
+    probe.setAttribute('x', '-9999');
+    probe.setAttribute('y', '-9999');
+    probe.setAttribute('aria-hidden', 'true');
+    let width = 0;
+    svg.appendChild(probe);
+    try {
+      if (typeof probe.getComputedTextLength === 'function') {
+        const names = new Set();
+        for (const key of keys) names.add(xLabelName(key));
+        let widest = '';
+        for (const name of names) {
+          probe.textContent = name;
+          const w = probe.getComputedTextLength();
+          if (w > width) { width = w; widest = name; }
+        }
+        // "Sep '25" only ever adds the year suffix, so measuring that suffix on the
+        // widest month name bounds every drawn label without one probe per key.
+        if (multiYear) {
+          for (const yy of new Set(keys.map(k => k.slice(2, 4)))) {
+            probe.textContent = `${widest} '${yy}`;
+            const w = probe.getComputedTextLength();
+            if (w > width) width = w;
+          }
+        }
+      }
+    } catch (err) {
+      width = 0; // a shell that never laid the svg out simply keeps the static budget
+    }
+    if (probe.parentNode) probe.parentNode.removeChild(probe);
+    return width;
+  }
+
+  /**
+   * One x row's geometry: the worst-case label width above, the stride that keeps two
+   * drawn labels X_LABEL_AIR apart (live from keys.length — any 1 to 60+, never a
+   * hardcoded 9/21), and the half width a tick has to stay clear of. The stride spends
+   * its budget on labels only; ticks are dropped separately, so ticks can never crowd
+   * two labels into each other.
+   */
+  function xLabelPlan(svg, keys, band, multiYear) {
+    const width = xLabelWidth(svg, keys, multiYear) || (multiYear ? X_LABEL_BUDGET_YEAR : X_LABEL_BUDGET);
+    return {
+      band: band,
+      width: width,
+      skip: Math.max(1, Math.ceil((width + X_LABEL_AIR) / band)),
+      half: width / 2 + X_LABEL_MARGIN
+    };
+  }
+
+  /**
+   * One x-axis month slot: a horizontal, middle-anchored label on every skip-th month's
+   * centre, a 10-unit .tick in the thinned slots. Ticks run DOWN from the label baseline
+   * (away from the glyph ink, which sits above it) and are dropped when their slot is
+   * closer to a drawn label than that label's half width + X_LABEL_MARGIN, so a tick can
+   * neither strike a label nor hang under one. No rotate() branch — every drawn label
+   * reads left to right.
+   */
+  function xLabelMarkup(label, x, y, i, plan) {
     const at = x.toFixed(1);
-    if (i % skip === 0) {
+    if (i % plan.skip === 0) {
       return `<text class="label" x="${at}" y="${y}" text-anchor="middle">${label}</text>`;
     }
-    return `<line class="tick" x1="${at}" y1="${y}" x2="${at}" y2="${y - 10}" stroke="currentColor" />`;
+    const off = i % plan.skip;
+    if (Math.min(off, plan.skip - off) * plan.band < plan.half) return '';
+    return `<line class="tick" x1="${at}" y1="${y}" x2="${at}" y2="${y + 10}" stroke="currentColor" />`;
   }
 
   // chart hooks: .bar / .bar--neg / .line / .dot / .tick / .label are styled by styles.css
@@ -1139,7 +1211,9 @@ const IBKR = (function () {
     const barW = Math.max(6, Math.min(12, band - 6));
     const zeroY = yL(0); // === yR(0) after sharedZeroLo
     const multiYear = state.year === 'all' && new Set(keys.map(k => k.slice(0, 4))).size > 1;
-    const skip = xLabelSkip(band, multiYear); // live from keys.length — never a hardcoded 9/21
+    // x row measured from this card's live .label font: narrow cards get coarser
+    // labels and their ticks are thinned out instead of striking the glyphs
+    const xPlan = xLabelPlan(svg, keys, band, multiYear);
     let out = '';
     // Grid + labels track each axis: left (bars) in green, right (running total)
     // in --chart-line blue; the shared $0 line is neutral and drawn once.
@@ -1167,7 +1241,7 @@ const IBKR = (function () {
         out += `<rect x="${(pl + band * i + 2).toFixed(1)}" y="${pt}" width="${(band - 4).toFixed(1)}" height="${ih}" rx="4" fill="currentColor" fill-opacity="0.05" />`;
       }
       out += `<rect class="bar${total < 0 ? ' bar--neg' : ''}" x="${(cx(i) - barW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${barW}" height="${height.toFixed(1)}" rx="2" fill="${total >= 0 ? '#48BB78' : '#F56565'}" tabindex="0" data-tip="${esc(tip)}"><title>${esc(tip)}</title></rect>`;
-      out += xLabelMarkup(`${MONTH_NAMES[+k.slice(5, 7) - 1] || k}${multiYear ? " '" + k.slice(2, 4) : ''}`, cx(i), H - 16, i, skip);
+      out += xLabelMarkup(xLabelText(k, multiYear), cx(i), H - 16, i, xPlan);
     });
     out += `<polyline class="line" points="${keys.map((k, i) => `${cx(i).toFixed(1)},${yR(cumulative[i]).toFixed(1)}`).join(' ')}" fill="none" stroke="#3182CE" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`;
     for (let i = 0; i < keys.length; i++) {
@@ -1222,7 +1296,9 @@ const IBKR = (function () {
     const cx = i => pl + band * (i + 0.5);
     const barW = Math.max(6, Math.min(12, band - 6));
     const multiYear = state.year === 'all' && new Set(keys.map(k => k.slice(0, 4))).size > 1;
-    const skip = xLabelSkip(band, multiYear); // live from keys.length — never a hardcoded 9/21
+    // x row measured from this card's live .label font: narrow cards get coarser
+    // labels and their ticks are thinned out instead of striking the glyphs
+    const xPlan = xLabelPlan(svg, keys, band, multiYear);
     let out = '';
     for (const v of [hi, 0, lo]) {
       const yy = y(v).toFixed(1);
@@ -1246,7 +1322,7 @@ const IBKR = (function () {
           : `${s.name} · ${monthTipText(st.key, months[st.key])}`;
         out += `<rect class="bar ${s.cls}" x="${(cx(i) - barW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${barW}" height="${h.toFixed(1)}" rx="2" fill="${s.fill}" tabindex="0" data-tip="${esc(tip)}"><title>${esc(tip)}</title></rect>`;
       }
-      out += xLabelMarkup(`${MONTH_NAMES[+st.key.slice(5, 7) - 1] || st.key}${multiYear ? " '" + st.key.slice(2, 4) : ''}`, cx(i), H - 16, i, skip);
+      out += xLabelMarkup(xLabelText(st.key, multiYear), cx(i), H - 16, i, xPlan);
     });
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
     svg.innerHTML = out;
@@ -1360,7 +1436,9 @@ const IBKR = (function () {
     const barW = Math.max(6, Math.min(12, band - 6));
     const zeroY = yL(0); // === yR(0) after sharedZeroLo
     const multiYear = state.year === 'all' && new Set(keys.map(k => k.slice(0, 4))).size > 1;
-    const skip = xLabelSkip(band, multiYear); // live from keys.length — never a hardcoded 9/21
+    // x row measured from this card's live .label font: narrow cards get coarser
+    // labels and their ticks are thinned out instead of striking the glyphs
+    const xPlan = xLabelPlan(svg, keys, band, multiYear);
     let out = '';
     // left grid/labels follow the interest bars (green), right follow the running line;
     // the shared $0 line is neutral and drawn once.
@@ -1388,7 +1466,7 @@ const IBKR = (function () {
       }
       // green = interest received that month, red = interest paid/fees dragging the month negative
       out += `<rect class="bar${amount < 0 ? ' bar--neg' : ''}" x="${(cx(i) - barW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${barW}" height="${height.toFixed(1)}" rx="2" fill="${amount >= 0 ? '#48BB78' : '#F56565'}" tabindex="0" data-tip="${esc(tip)}"><title>${esc(tip)}</title></rect>`;
-      out += xLabelMarkup(`${MONTH_NAMES[+k.slice(5, 7) - 1] || k}${multiYear ? " '" + k.slice(2, 4) : ''}`, cx(i), H - 16, i, skip);
+      out += xLabelMarkup(xLabelText(k, multiYear), cx(i), H - 16, i, xPlan);
     });
     out += `<polyline class="line" points="${keys.map((k, i) => `${cx(i).toFixed(1)},${yR(cumulative[i]).toFixed(1)}`).join(' ')}" fill="none" stroke="#3182CE" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`;
     for (let i = 0; i < keys.length; i++) {
