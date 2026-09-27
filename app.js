@@ -16,6 +16,7 @@
  * drillBody drillTitle emptyState errorBox clearBtn postedToggle fileLabel,
  * includeChips tickerBtn toTopTickers tickersToTop filterNote tickerSearchClear
  * includeMore (the "+n" chip for chips the fixed cluster cannot show)
+ * toolbarToggle (mobile Controls fold — class/aria/persisted state only)
  * fxBadge fxDetail fxInput fxReset csvHelpBtn csvHelpModal csvHelpClose
  * heroCsvInfo heroCsvHelp (the hero subtitle "i" opens the same help dialog), plus
  * the optional input[name="currencyToggle"] USD/AUD switch, the interest card
@@ -50,6 +51,7 @@ const EXCLUDE_KEY = 'ibkr-exclude-v1';   // persisted root-symbol exclude list
 const INCLUDE_KEY = 'ibkr-include-v1';   // persisted root-symbol include ("only these") list
 const INCLUDE_SCOPE_KEY = 'ibkr-include-scope-v1'; // { SYM: 'options'|'stock' } — include only that leg kind
 const EXCLUDE_SCOPE_KEY = 'ibkr-exclude-scope-v1'; // { SYM: 'options'|'stock' } — exclude only that leg kind
+const TOOLBAR_KEY = 'ibkr-toolbar-collapsed-v1';   // '1' while the mobile toolbar fold is collapsed
 const FX_KEYS = { cache: 'fx-audusd-v1', override: 'fx_override' };
 const FX_TTL_MS = 12 * 60 * 60 * 1000;   // fresh-cache window for the FX rate
 const FX_TIMEOUT_MS = 5000;              // per-provider request timeout
@@ -2028,14 +2030,17 @@ const IBKR = (function () {
   /**
    * Both "Tickers ↑" shortcuts — #toTopTickers (Monthly summary header) and
    * #tickersToTop (drill-down header) — share this handler: scroll #tickerBtn into
-   * view, focus it and flash .glow for 2.5s. The pulse itself comes from
-   * styles.css; the class is also a plain ring so reduced-motion users still see
-   * the target (the global rule flattens the animation, JS still removes the class
-   * on the same timer).
+   * view, focus it and flash .glow for 2.5s. A folded mobile toolbar hides that
+   * button, so the fold is opened first (without touching the persisted choice).
+   * The pulse itself comes from styles.css; the class is also a plain ring so
+   * reduced-motion users still see the target (the global rule flattens the
+   * animation, JS still removes the class on the same timer).
    */
   function onToTopTickers() {
     const btn = byId('tickerBtn');
     if (!btn) return;
+    const toolbar = byId('toolbar');
+    if (toolbar && toolbar.classList && toolbar.classList.contains('is-collapsed')) applyToolbarCollapsed(false);
     const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (typeof btn.scrollIntoView === 'function') {
       btn.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
@@ -2365,6 +2370,40 @@ const IBKR = (function () {
     if (at >= 0) list.splice(at, 1);
     setInclude(list);
   }
+  // ------------------------------------------------------------ toolbar fold
+
+  /**
+   * Mobile toolbar fold — #toolbarToggle flips .toolbar.is-collapsed, which
+   * styles.css honours below 620px by hiding every .toolbar__inner child but
+   * the toggle (the sticky band shrinks to one 32px row). Expanding is the
+   * layout change that matters: the wider row is re-measured for the "+n" chip
+   * count (its clip depends on the laid-out width) and for the popover clamps.
+   * Restore and the Tickers ↑ shortcut call this directly and never write
+   * storage — only onToolbarToggle persists the user's fold.
+   */
+  function applyToolbarCollapsed(collapsed) {
+    const toolbar = byId('toolbar');
+    const toggle = byId('toolbarToggle');
+    const fold = collapsed === true;
+    if (toolbar && toolbar.classList) toolbar.classList.toggle('is-collapsed', fold);
+    if (toggle && typeof toggle.setAttribute === 'function') {
+      toggle.setAttribute('aria-expanded', fold ? 'false' : 'true');
+    }
+    if (!fold) {
+      measureIncludeOverflow(); // hidden while folded, so refresh the clip after unfolding
+      replacePopovers();
+    }
+  }
+
+  /** #toolbarToggle click — flip the fold, persisting it ('1' folded; key gone while open). */
+  function onToolbarToggle() {
+    const toolbar = byId('toolbar');
+    const collapsed = !(toolbar && toolbar.classList && toolbar.classList.contains('is-collapsed'));
+    applyToolbarCollapsed(collapsed);
+    if (collapsed) lsSet(TOOLBAR_KEY, '1');
+    else lsRemove(TOOLBAR_KEY);
+  }
+
   function syncFxInput() {
     const input = byId('fxInput');
     if (!input || (typeof document !== 'undefined' && document.activeElement === input)) return;
@@ -2399,6 +2438,7 @@ const IBKR = (function () {
     listen(byId('dropZone'), 'drop', onDrop);
     listen(byId('dropZone'), 'click', onZoneClick);
     listen(byId('clearBtn'), 'click', clearAll);
+    listen(byId('toolbarToggle'), 'click', onToolbarToggle);
     listen(byId('yearSelect'), 'change', onYearChange);
     listen(byId('monthChips'), 'click', onChipClick);
     listen(byId('monthlyBody'), 'click', onRowClick);
@@ -2471,6 +2511,8 @@ const IBKR = (function () {
     // the toolbar's width decides how many chips the fixed cluster fits — keep the
     // "+n" #includeMore count (and the clip) in step with it
     if (typeof window !== 'undefined') listen(window, 'resize', measureIncludeOverflow);
+    // restore the mobile fold from storage (class + aria only; never persisted here)
+    applyToolbarCollapsed(lsGet(TOOLBAR_KEY) === '1');
     syncFxInput();
     const label = byId('fileLabel');
     if (label && !label.textContent.trim() && !hasData()) setFileLabel('No files selected');

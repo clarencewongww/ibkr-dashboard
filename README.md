@@ -224,10 +224,15 @@ mirror of Exclude, using the same case-insensitive root-symbol matching and pers
   are cleared so no stale symbol list lingers. The `#filterNote` summary (11px) ellipsises long
   lists and mirrors the full text into its `title`. The toolbar itself flex-wraps at every width —
   one slim row while the controls fit, extra lines when they do not (3 rows at 768px, 4 at 375px) —
-  so nothing is ever clipped or parked behind an overflow.
+  so nothing is ever clipped or parked behind an overflow. Below 620px the toolbar also carries a
+  **Controls** fold (`#toolbarToggle`, its first child): tapping it collapses the whole row to one
+  ~48px sticky band — chevron flips, `aria-expanded` follows and the state persists under
+  **`ibkr-toolbar-collapsed-v1`** (restored on reload) — and tapping it again unfolds the row. From
+  620px up the toggle never renders and the toolbar is always expanded.
 - **Jump back.** Both the Monthly summary header and the drill-down header carry a **Tickers ↑**
-  shortcut (`#toTopTickers` / `#tickersToTop`) that scrolls the Tickers button into view, focuses
-  it and flashes a short glow around it.
+  shortcut (`#toTopTickers` / `#tickersToTop`) that unfolds the toolbar first when the mobile
+  Controls fold is active, then scrolls the Tickers button into view, focuses it and flashes a short
+  glow around it.
 - **Ticker-less cash rows** (e.g. broker interest) have no root symbol, so **include never filters
   them** — interest and other cash buckets stay in the totals while an allow-list is active.
 - As with Exclude, hiding is display-only: **overlapping concatenated files still double-count**.

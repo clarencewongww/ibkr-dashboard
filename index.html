@@ -85,8 +85,13 @@
              picker and the dialog hands focus back to it on close — and its
              title/aria-label are cleared whenever it hides. #filterNote is 11px
              and ellipsises long lists, mirroring the full string into title=.
-             .toolbar__inner flex-wraps at every width (no scroller, no
-             hidden-scrollbar trick); the band keeps its height.
+             .toolbar__inner (#toolbarInner) flex-wraps at every width (no
+             scroller, no hidden-scrollbar trick); the band keeps its height.
+             Below 620px #toolbarToggle (.toolbar__toggle, its first child)
+             folds the row: .is-collapsed on the #toolbar band hides every
+             other child (styles.css), the chevron flips, aria-expanded
+             follows and app.js persists the fold (ibkr-toolbar-collapsed-v1).
+             From 620px up the toggle never renders and the row never folds.
   Basis      #postedToggle  fieldset; radios name="postedToggle" value="posted"|"accrual".
              app.js listens for "change" on the fieldset (radios bubble) and reads
              input[name="postedToggle"]:checked → value "accrual" = accrual interest.
@@ -189,9 +194,22 @@
      Sticky top z-index 15 (under the footer/dialogs, over every card). The row
      flex-wraps at every width — one slim row while the controls fit, extra
      lines when they do not — so no control is ever clipped or hidden behind a
-     scroller (.toolbar__inner). -->
-<section class="toolbar" aria-label="Dashboard controls">
-  <div class="container toolbar__inner">
+     scroller (.toolbar__inner). Below 620px the first child (#toolbarToggle)
+     folds the row behind one button (.toolbar.is-collapsed, persisted under
+     ibkr-toolbar-collapsed-v1); the Tickers ↑ shortcuts unfold it first. -->
+<section class="toolbar" id="toolbar" aria-label="Dashboard controls">
+  <div class="container toolbar__inner" id="toolbarInner">
+
+    <!-- Mobile fold: first child of the row, hidden from 620px up. It toggles
+         .toolbar.is-collapsed, which hides every other child below 620px
+         (styles.css); app.js owns the class, aria-expanded and the stored state. -->
+    <button id="toolbarToggle" class="btn btn--ghost toolbar__toggle" type="button"
+            aria-expanded="true" aria-controls="toolbarInner">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="m6 9 6 6 6-6"></path>
+      </svg>
+      <span class="toolbar__toggle-label">Controls</span>
+    </button>
 
     <div class="field">
       <label class="field__label" for="yearSelect">Year</label>

@@ -462,6 +462,30 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   gap: 12px;
 }
 
+/* Mobile fold: #toolbarToggle is the first child of the row and the only child
+   .toolbar.is-collapsed keeps below 620px, so the sticky band shrinks to one
+   32px control (8px + 32px + 8px ≈ 48px). The base display:none sits after
+   .btn (same specificity), so desktop/tablet never sees the toggle and never
+   folds; the 619px query below flips it on and hides the rest of the row. */
+.toolbar__toggle {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+}
+
+.toolbar__toggle .icon { transition: transform .15s ease; }
+
+/* folded → the chevron turns from "collapse" (down) to "expand" (right) */
+.toolbar.is-collapsed .toolbar__toggle .icon { transform: rotate(-90deg); }
+
+@media (max-width: 619px) {
+  .toolbar__toggle { display: inline-flex; }
+  /* every other direct child leaves the flow: no clipped/hidden controls are
+     reachable while folded (the row is either folded or fully wrapped) */
+  .toolbar.is-collapsed .toolbar__inner > :not(.toolbar__toggle) { display: none; }
+}
+
 .toolbar .field__label { color: var(--muted); }
 
 .toolbar .btn--ghost {
