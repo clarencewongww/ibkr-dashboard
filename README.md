@@ -92,11 +92,11 @@ Multiple files are concatenated; do not load overlapping periods twice or totals
 ### Monthly chart
 
 The **Monthly realised P&L** card is dual-axis: the green/red bars scale to the monthly totals
-(**left** axis, green labels) and the teal-dark running-total line scales to the cumulative series
-(**right** axis, teal-dark labels) — a month far larger than the rest can no longer flatten the
+(**left** axis, green labels) and the blue running-total line scales to the cumulative series
+(**right** axis, blue labels) — a month far larger than the rest can no longer flatten the
 other series. Hover a bar for `May 2026 · Net $X · Running $Y`; the dots carry `May 2026 · Running
 $Y`. The legend marks the sides and matches the series: **Net P&L (left)** green, **Running total
-(right)** teal-dark.
+(right)** blue `#3182CE`.
 
 On desktop the four Overview cards form two columns — **chart + Income breakdown** on the left
 (1.55fr) and **Monthly summary + drill-down** on the right (1fr); each column is an independent
@@ -207,6 +207,10 @@ mirror of Exclude, using the same case-insensitive root-symbol matching and pers
   (`#tickerSearchClear`) clears the query.
 - **Chips.** Every included root appears as a pressed chip next to the button, labelled with its
   scope while scoped (`AMD (Options only)`); click a chip to drop that ticker from the allow-list.
+  The cluster stays on **one line**: chips scroll horizontally inside the toolbar row and the
+  `#filterNote` summary ellipsises long lists (its `title` carries the full text). Below 1180px the
+  toolbar wraps rather than clipping; from 1180px the row scrolls and keeps a thin scrollbar
+  instead of hiding the overflow.
 - **Jump back.** Both the Monthly summary header and the drill-down header carry a **Tickers ↑**
   shortcut (`#toTopTickers` / `#tickersToTop`) that scrolls the Tickers button into view, focuses
   it and flashes a short glow around it.

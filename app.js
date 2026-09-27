@@ -1041,8 +1041,8 @@ const IBKR = (function () {
     const zeroL = yL(0);
     const multiYear = state.year === 'all' && new Set(keys.map(k => k.slice(0, 4))).size > 1;
     let out = '';
-    // Grid + labels track each axis: left (bars) in green, right (running total) in
-    // teal-dark. styles.css colours .grid--left/right and .label--left/right.
+    // Grid + labels track each axis: left (bars) in green, right (running total)
+    // in --chart-line blue. styles.css colours .grid--left/right and .label--left/right.
     for (const v of [hiL, 0, loL]) {
       const yy = yL(v).toFixed(1);
       out += `<line class="grid grid--left" x1="${pl}" y1="${yy}" x2="${W - pr}" y2="${yy}" stroke="currentColor" stroke-opacity="0.5" />`;
@@ -1064,7 +1064,7 @@ const IBKR = (function () {
       out += `<rect class="bar${total < 0 ? ' bar--neg' : ''}" x="${(cx(i) - barW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${barW}" height="${height.toFixed(1)}" rx="2" fill="${total >= 0 ? '#48BB78' : '#F56565'}" tabindex="0" data-tip="${esc(tip)}"><title>${esc(tip)}</title></rect>`;
       out += `<text class="label" x="${cx(i).toFixed(1)}" y="${H - 16}" text-anchor="middle">${MONTH_NAMES[+k.slice(5, 7) - 1] || k}${multiYear ? " '" + k.slice(2, 4) : ''}</text>`;
     });
-    out += `<polyline class="line" points="${keys.map((k, i) => `${cx(i).toFixed(1)},${yR(cumulative[i]).toFixed(1)}`).join(' ')}" fill="none" stroke="#319795" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`;
+    out += `<polyline class="line" points="${keys.map((k, i) => `${cx(i).toFixed(1)},${yR(cumulative[i]).toFixed(1)}`).join(' ')}" fill="none" stroke="#3182CE" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`;
     for (let i = 0; i < keys.length; i++) {
       const runTip = `${monthLabel(keys[i])} · Running ${fmtMoney(cumulative[i])}`;
       out += `<circle class="dot" cx="${cx(i).toFixed(1)}" cy="${yR(cumulative[i]).toFixed(1)}" r="2.5" tabindex="0" data-tip="${esc(runTip)}"><title>${esc(runTip)}</title></circle>`;
@@ -1187,7 +1187,7 @@ const IBKR = (function () {
 
   /**
    * Interest analysis card — KPIs (total, avg/day, best month, share of net), a dual-axis bar
-   * chart whose cumulative teal-dark running line scales to its own right-hand domain
+   * chart whose cumulative blue running line scales to its own right-hand domain
    * (#interestSvg/#interestTip, same 720x300 geometry as #chartSvg) and a per-month table
    * (Month | Interest | Trades | Share of net). Every lookup is null-safe: shells without the
    * card skip it entirely.
@@ -1277,7 +1277,7 @@ const IBKR = (function () {
       out += `<rect class="bar${amount < 0 ? ' bar--neg' : ''}" x="${(cx(i) - barW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${barW}" height="${height.toFixed(1)}" rx="2" fill="${amount >= 0 ? '#48BB78' : '#F56565'}" tabindex="0" data-tip="${esc(tip)}"><title>${esc(tip)}</title></rect>`;
       out += `<text class="label" x="${cx(i).toFixed(1)}" y="${H - 16}" text-anchor="middle">${MONTH_NAMES[+k.slice(5, 7) - 1] || k}${multiYear ? " '" + k.slice(2, 4) : ''}</text>`;
     });
-    out += `<polyline class="line" points="${keys.map((k, i) => `${cx(i).toFixed(1)},${yR(cumulative[i]).toFixed(1)}`).join(' ')}" fill="none" stroke="#319795" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`;
+    out += `<polyline class="line" points="${keys.map((k, i) => `${cx(i).toFixed(1)},${yR(cumulative[i]).toFixed(1)}`).join(' ')}" fill="none" stroke="#3182CE" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`;
     for (let i = 0; i < keys.length; i++) {
       const runTip = `${monthLabel(keys[i])} · Interest running ${fmtMoney(cumulative[i])}`;
       out += `<circle class="dot" cx="${cx(i).toFixed(1)}" cy="${yR(cumulative[i]).toFixed(1)}" r="2.5" tabindex="0" data-tip="${esc(runTip)}"><title>${esc(runTip)}</title></circle>`;
@@ -1391,6 +1391,7 @@ const IBKR = (function () {
    * #filterNote — one-line summary of the active ticker filters, hidden while everything is
    * default: "Including only A (Options only), B · Excluding C (Stock only) · Stock only"
    * (the trailing clause is the global #assetToggle filter; empty clauses are omitted).
+   * .filter-note ellipsises, so title= carries the full string for hover/AT.
    */
   function renderFilterNote() {
     const el = pickById(TICKER_IDS.note);
@@ -1399,7 +1400,9 @@ const IBKR = (function () {
     if (state.include.length) parts.push('Including only ' + state.include.map(sym => scopedSymbol(sym, state.includeScope[sym])).join(', '));
     if (state.exclude.length) parts.push('Excluding ' + state.exclude.map(sym => scopedSymbol(sym, state.excludeScope[sym])).join(', '));
     if (getAssetFilter() !== 'all') parts.push(scopeLabel(getAssetFilter()));
-    el.textContent = parts.join(' · ');
+    const text = parts.join(' · ');
+    el.textContent = text;
+    el.title = text;
     el.hidden = parts.length === 0;
   }
 

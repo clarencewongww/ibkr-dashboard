@@ -13,6 +13,9 @@
   --teal-dark: #319795;
   --green: #48BB78;
   --red: #F56565;
+  /* chart accents: bars stay green/red; the running-total line + its right axis
+     and dots use a distinct blue so the line never reads as a green series */
+  --chart-line: #3182CE;
   /* chart series — income breakdown: options / stock / interest + dividends.
      --indigo further down is the hero-ink tint (#313860), so the stock series
      gets its own brighter token instead of recolouring existing UI. */
@@ -221,7 +224,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   overflow: visible;
   background: var(--hero);
   color: #fff;
-  padding-block: 18px 20px; /* compact: controls live in .toolbar now */
+  padding-block: 10px 12px; /* compact: controls live in .toolbar now */
 }
 
 .hero::after {
@@ -243,7 +246,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 .hero__brand {
   display: flex;
-  align-items: flex-start;
+  align-items: center; /* mark + title/sub block are vertically centred */
   gap: 14px;
   min-width: 0;
 }
@@ -265,12 +268,12 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 .hero__copy { min-width: 0; }
 
 .hero__title {
-  font-size: clamp(20px, 2.8vw, 24px);
+  font-size: clamp(20px, 2.8vw, 22px);
   color: #fff;
 }
 
 .hero__sub {
-  margin-top: 6px;
+  margin-top: 2px;
   max-width: 62ch;
   font-size: 14.5px;
   color: rgba(255, 255, 255, .72);
@@ -283,7 +286,11 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 .hero__sub-note {
   position: relative;
   display: inline-flex;
-  vertical-align: -3px;
+  /* baseline puts the "i" glyph on the subtitle's own text baseline (was -3px,
+     which floated it); align-self:center is the same alignment for a flex
+     subtitle context. */
+  vertical-align: baseline;
+  align-self: center;
   margin-left: 2px;
 }
 
@@ -477,15 +484,27 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 .toolbar .file-label { color: var(--muted); }
 
-/* include tickers: the Tickers (n) modal button beside the applied chips */
+/* include tickers: the Tickers (n) modal button beside the applied chips.
+   Single line by contract — the row itself scrolls horizontally (chips are
+   0 0 auto and never wrap/shrink) and #filterNote ellipsises, so the sticky
+   band's height is fixed even with 5+ exclusions. */
 .include-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
+  overflow-x: auto;
+  /* 5px ring room (2px outline + 2px offset, plus the .glow spread) inside the
+     scroll clip; the negative margin keeps the row's outer box unchanged. */
+  padding: 5px;
+  margin: -5px;
+  scrollbar-width: thin;
 }
 
-.include-row .btn { flex: none; white-space: nowrap; }
+.include-row .btn,
+.include-row .chip,
+.include-row .chips { flex: 0 0 auto; white-space: nowrap; }
+.include-row .chips { flex-wrap: nowrap; }
 
 #includeWrap {
   flex: 1 1 260px;
@@ -495,12 +514,16 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 #includeWrap .chips { margin-bottom: 0; }
 
-/* #filterNote — one-line summary of the active ticker filters (hidden while empty) */
+/* #filterNote — one-line summary of the active ticker filters (hidden while
+   empty). Long lists ellipsise; app.js mirrors the full string into title=. */
 .filter-note {
   margin-top: 6px;
+  max-width: 100%;
   font-size: 12.5px;
   color: var(--muted);
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .file-label {
@@ -866,20 +889,20 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 .chart .chart__hint { fill: var(--muted); font-size: 13px; font-family: var(--font); }
 .chart .bar:not([fill]) { fill: var(--teal); }
 .chart .bar--neg:not([fill]) { fill: var(--red); }
-.chart .line:not([stroke]) { stroke: var(--teal-dark); }
+.chart .line:not([stroke]) { stroke: var(--chart-line); }
 .chart .line { stroke-width: 2; fill: none; stroke-linejoin: round; stroke-linecap: round; }
-.chart .dot { fill: var(--card); stroke: var(--teal-dark); stroke-width: 2; }
+.chart .dot { fill: var(--card); stroke: var(--chart-line); stroke-width: 2; }
 .chart .tick,
 .chart .label { fill: var(--muted); font-size: 11px; font-family: var(--font); }
 
 /* dual axes (renderChart / renderInterest): the left axis drives the bars and is
-   green, the right axis tracks the running line and is teal-dark — labels and
-   gridlines share each side's colour. app.js emits currentColor as a fallback,
+   green, the right axis tracks the running line and is --chart-line blue — labels
+   and gridlines share each side's colour. app.js emits currentColor as a fallback,
    but these class rules win over the presentation attributes. */
 .chart .label--left { fill: var(--green); }
-.chart .label--right { fill: var(--teal-dark); }
+.chart .label--right { fill: var(--chart-line); }
 .chart .grid--left { stroke: var(--green); }
-.chart .grid--right { stroke: var(--teal-dark); }
+.chart .grid--right { stroke: var(--chart-line); }
 
 .chart [data-month] { cursor: pointer; }
 .chart rect[tabindex] { cursor: pointer; }
@@ -915,7 +938,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 }
 
 .legend__dot--bar { background: var(--green); }
-.legend__dot--line { background: var(--teal-dark); border-radius: 999px; }
+.legend__dot--line { background: var(--chart-line); border-radius: 999px; }
 .legend__dot--opt { background: var(--green); }
 .legend__dot--stock { background: var(--indigo-bright); }
 .legend__dot--int { background: var(--gold); }
@@ -1531,44 +1554,35 @@ body:has(dialog[open]) { overflow: hidden; }
   /* the breakdown now owns the wide column, so drop its centred 760px cap */
   #breakdownCard .chart-wrap { max-width: none; }
   .hero__inner { flex-wrap: nowrap; }
-  /* Toolbar: keep the single slim row on desktop. The controls fit from ~1240px
-     up, but at 1024–1239px the base wrap stacked the fields into a 125px band;
-     nowrap + overflow-x lets the small excess scroll instead. */
+}
+
+/* Toolbar row. Below 1180px the base .toolbar__inner flex-wrap:wrap wins, so
+   695/768/1024 always reach Clear and the tickers cluster by stacking instead
+   of hiding them in an invisible scroller. From 1180px the single slim row is
+   kept and scrolls its small excess (the controls fit from ~1240px) with the
+   scrollbar as affordance: the old scrollbar-width:none /
+   ::-webkit-scrollbar display:none pair is gone, so a thin styled bar paints
+   while the row scrolls (and stays put on classic-scrollbar platforms). */
+@media (min-width: 1180px) {
   .toolbar__inner {
     flex-wrap: nowrap;
     overflow-x: auto;
-    scrollbar-width: none;
+    /* ring room: overflow-x:auto also clips the other axis, so pad then cancel
+       with a negative margin — the sticky band keeps its height. */
+    padding-block: 5px;
+    margin-block: -5px;
   }
-  .toolbar__inner::-webkit-scrollbar { display: none; }
+  .toolbar__inner::-webkit-scrollbar { height: 6px; }
+  .toolbar__inner::-webkit-scrollbar-track { background: transparent; }
+  .toolbar__inner::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: var(--border);
+  }
+  .toolbar__inner::-webkit-scrollbar-thumb:hover { background: var(--muted); }
   .toolbar .field { flex: 0 0 auto; }
   /* natural width (capped at the 420px design width) — without this the base
-     flex: 1 1 260px shrink squeezes the cluster to ~46px at 1024–1100px */
+     flex: 1 1 260px shrink squeezes the cluster when the row scrolls */
   #includeWrap { flex: 0 0 auto; }
-}
-
-/* Slim sticky toolbar: one horizontally scrollable row instead of a tall
-   wrapped stack — every control keeps its natural width. Phones (<=619px) ship
-   this as before; 620–1023px previously fell back to the 125–185px wrap. */
-@media (max-width: 1023px) {
-  .toolbar__inner {
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: 10px;
-    overflow-x: auto;
-    padding-bottom: 2px;
-    scrollbar-width: none; /* the swipe affordance is enough on a phone */
-  }
-  .toolbar__inner::-webkit-scrollbar { display: none; }
-  .toolbar .field { flex: 0 0 auto; }
-  .select { width: auto; }
-  #includeWrap { flex: 0 0 auto; max-width: none; }
-  .file-label { max-width: 150px; }
-}
-
-@media (min-width: 620px) and (max-width: 1023px) {
-  /* Tablet: cap the include/exclude cluster at the desktop width so a long
-     #filterNote/chip list wraps inside the row instead of stretching it. */
-  #includeWrap { max-width: 420px; }
 }
 
 @media (max-width: 619px) {

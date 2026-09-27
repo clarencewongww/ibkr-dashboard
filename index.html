@@ -73,7 +73,10 @@
              aria-pressed="true" (its label/title name the scope); click removes the
              include. #includeWrap groups the Tickers button with those chips and
              #filterNote (aria-live="polite" summary of the active ticker filters,
-             scopes included)
+             scopes included). Single-line contract: .include-row keeps chips on one
+             row and scrolls horizontally itself, #filterNote ellipsises long lists
+             and mirrors the full string into title=. .toolbar__inner wraps below
+             1180px and scrolls one slim row, keeping its thin scrollbar, from 1180px.
   Basis      #postedToggle  fieldset; radios name="postedToggle" value="posted"|"accrual".
              app.js listens for "change" on the fieldset (radios bubble) and reads
              input[name="postedToggle"]:checked → value "accrual" = accrual interest.
@@ -104,7 +107,7 @@
              styles.css owns .grid .grid--left/right .label .label--left/right
              .bar .bar--neg .line .dot .chart__hint; inline fill/stroke on
              .bar/.line win over the CSS fallbacks. Left axis (bars) = green,
-             right axis (running line) = teal-dark
+             right axis (running line + dots) = #3182CE (--chart-line) blue
   Tables     #monthlyTable > tbody#monthlyBody   cols: Month | Net P&L | Trades | Avg / trade
              #drillTable   > tbody#drillBody     cols: Symbol | Asset class | Trades | Net P&L
              #drillTitle   drill card heading
@@ -167,7 +170,11 @@
 
 <!-- Toolbar: import + view controls lifted out of the dark hero onto the light
      surface. Ids are unchanged (#yearSelect #currencyToggle #fxInput #fxReset
-     #fileInput #clearBtn); styles.css carries the .toolbar colour overrides. -->
+     #fileInput #clearBtn); styles.css carries the .toolbar colour overrides.
+     Sticky top z-index 15 (under the footer/dialogs, over every card). The row
+     wraps below 1180px so Clear and the tickers cluster are always reachable;
+     from 1180px it is one slim horizontally scrollable row that keeps its thin
+     scrollbar (.toolbar__inner). -->
 <section class="toolbar" aria-label="Dashboard controls">
   <div class="container toolbar__inner">
 
