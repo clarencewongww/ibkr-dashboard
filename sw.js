@@ -10,7 +10,7 @@
    `activate` purges any older shell caches. */
 'use strict';
 
-const CACHE = 'ibkr-shell-v2';
+const CACHE = 'ibkr-shell-v3';
 
 /* Explicit allowlist, resolved against this worker's location so a sub-path
    deployment (e.g. GitHub Pages) caches its own copy of the shell. */

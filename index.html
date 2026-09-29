@@ -7,7 +7,7 @@
      manual override disables network). no-referrer keeps this page's URL (and any query string)
      out of that request. -->
 <meta name="referrer" content="no-referrer">
-<meta name="color-scheme" content="light">
+<meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#151928">
 <!-- Sub-path safe for the GitHub Pages copy: every asset ref here is relative, the
      manifest's start_url/scope/id are ./ and sw.js resolves its allowlist from its
@@ -19,6 +19,23 @@
 <title>IBKR Realised P&amp;L · Local Dashboard</title>
 <!-- inline data-URI favicon: keeps the page at zero network requests beyond the 3 local files -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%23151928'/%3E%3Cg fill='none' stroke='%234FD1C5' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 19v-5'/%3E%3Cpath d='M12 19V6'/%3E%3Cpath d='M18 19v-8'/%3E%3C/g%3E%3C/svg%3E">
+<!-- Theme boot: resolves the stored light/dark/system pick and stamps
+     <html data-theme> before the stylesheet paints, so a dark reload never
+     flashes the light shell. Mirrors applyTheme() in app.js; 'system' asks
+     matchMedia. try/catch: private-mode storage can throw. -->
+<script>
+(function () {
+  try {
+    var stored = localStorage.getItem('ibkr-theme-v1');
+    var mode = stored === 'light' || stored === 'dark' ? stored : 'system';
+    var dark = mode === 'dark' ||
+      (mode === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  } catch (err) {
+    document.documentElement.dataset.theme = 'light';
+  }
+})();
+</script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -127,8 +144,10 @@
                            relative to .chart-wrap (transform lifts it above the bar)
              #chartPlaceholder — pre-JS placeholder, replaced on the first render
              styles.css owns .grid .grid--left/right .label .label--left/right
-             .bar .bar--neg .line .dot .chart__hint; inline fill/stroke on
-             .bar/.line win over the CSS fallbacks. Left axis (bars) = green,
+             .bar .bar--neg .line .dot .chart__hint; bars carry inline fills
+             (green/red series encoding) that win over the CSS fallbacks, while
+             the running line + dots stay on --chart-line (no inline stroke) so
+             the dark theme token can lift them. Left axis (bars) = green,
              right axis (running line + dots) = #3182CE (--chart-line) blue;
              the dual-axis charts share one neutral $0 gridline (app.js re-expands
              the flatter domain) and thin x labels to every skip-th month — always
@@ -152,6 +171,12 @@
                         tooltip via .fx-wrap (app.js writes both)
              #fxDetail app.js fills it with the full source detail; .fx-detail is the
                         footer tooltip, hidden until #fxBadge is hovered or focused
+  Theme      #themeToggle  fieldset; radios name="themeToggle" value="light"|"dark"|"system"
+             ("system" checked in markup). app.js listens for "change" on the fieldset
+             (radios bubble), persists the pick under ibkr-theme-v1 and calls applyTheme():
+             [data-theme] on <html> switches the styles.css dark-token block, the
+             theme-color meta follows, and "system" tracks matchMedia live. The inline
+             boot script in <head> resolves the same key before first paint (no flash).
   Breakdown  #breakdownCard  card shell · #breakdownSvg — 720x300 viewBox, same contract
              as #chartSvg (app.js re-declares the viewBox and draws .chart primitives)
              #breakdownTip — same hidden/[hidden] contract as #chartTip
@@ -235,6 +260,25 @@
       <label class="segmented__opt">
         <input type="radio" name="currencyToggle" id="currencyToggleAud" value="aud">
         <span class="segmented__pill">AUD</span>
+      </label>
+    </fieldset>
+
+    <!-- Theme switch: light / dark / system (default follows the OS). app.js
+         persists the pick under ibkr-theme-v1 and applies it to <html data-theme>;
+         the inline boot script in <head> paints the stored pick before first paint. -->
+    <fieldset id="themeToggle" class="segmented segmented--asset" aria-label="Theme">
+      <legend class="visually-hidden">Theme</legend>
+      <label class="segmented__opt">
+        <input type="radio" name="themeToggle" id="themeToggleLight" value="light">
+        <span class="segmented__pill">Light</span>
+      </label>
+      <label class="segmented__opt">
+        <input type="radio" name="themeToggle" id="themeToggleDark" value="dark">
+        <span class="segmented__pill">Dark</span>
+      </label>
+      <label class="segmented__opt">
+        <input type="radio" name="themeToggle" id="themeToggleSystem" value="system" checked>
+        <span class="segmented__pill">System</span>
       </label>
     </fieldset>
 

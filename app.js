@@ -52,6 +52,7 @@ const INCLUDE_KEY = 'ibkr-include-v1';   // persisted root-symbol include ("only
 const INCLUDE_SCOPE_KEY = 'ibkr-include-scope-v1'; // { SYM: 'options'|'stock' } — include only that leg kind
 const EXCLUDE_SCOPE_KEY = 'ibkr-exclude-scope-v1'; // { SYM: 'options'|'stock' } — exclude only that leg kind
 const TOOLBAR_KEY = 'ibkr-toolbar-collapsed-v1';   // '1' while the mobile toolbar fold is collapsed
+const THEME_KEY = 'ibkr-theme-v1';                 // 'light' | 'dark' | 'system' (absent = system)
 const FX_KEYS = { cache: 'fx-audusd-v1', override: 'fx_override' };
 const FX_TTL_MS = 12 * 60 * 60 * 1000;   // fresh-cache window for the FX rate
 const FX_TIMEOUT_MS = 5000;              // per-provider request timeout
@@ -1246,7 +1247,7 @@ const IBKR = (function () {
       out += `<rect class="bar${total < 0 ? ' bar--neg' : ''}" x="${(cx(i) - barW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${barW}" height="${height.toFixed(1)}" rx="2" fill="${total >= 0 ? '#48BB78' : '#F56565'}" tabindex="0" data-tip="${esc(tip)}"><title>${esc(tip)}</title></rect>`;
       out += xLabelMarkup(xLabelText(k, multiYear), cx(i), H - 16, i, xPlan);
     });
-    out += `<polyline class="line" points="${keys.map((k, i) => `${cx(i).toFixed(1)},${yR(cumulative[i]).toFixed(1)}`).join(' ')}" fill="none" stroke="#3182CE" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`;
+    out += `<polyline class="line" points="${keys.map((k, i) => `${cx(i).toFixed(1)},${yR(cumulative[i]).toFixed(1)}`).join(' ')}" fill="none" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`;
     for (let i = 0; i < keys.length; i++) {
       const runTip = `${monthLabel(keys[i])} · Running ${fmtMoney(cumulative[i])}`;
       out += `<circle class="dot" cx="${cx(i).toFixed(1)}" cy="${yR(cumulative[i]).toFixed(1)}" r="2.5" tabindex="0" data-tip="${esc(runTip)}"><title>${esc(runTip)}</title></circle>`;
@@ -1471,7 +1472,7 @@ const IBKR = (function () {
       out += `<rect class="bar${amount < 0 ? ' bar--neg' : ''}" x="${(cx(i) - barW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${barW}" height="${height.toFixed(1)}" rx="2" fill="${amount >= 0 ? '#48BB78' : '#F56565'}" tabindex="0" data-tip="${esc(tip)}"><title>${esc(tip)}</title></rect>`;
       out += xLabelMarkup(xLabelText(k, multiYear), cx(i), H - 16, i, xPlan);
     });
-    out += `<polyline class="line" points="${keys.map((k, i) => `${cx(i).toFixed(1)},${yR(cumulative[i]).toFixed(1)}`).join(' ')}" fill="none" stroke="#3182CE" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`;
+    out += `<polyline class="line" points="${keys.map((k, i) => `${cx(i).toFixed(1)},${yR(cumulative[i]).toFixed(1)}`).join(' ')}" fill="none" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />`;
     for (let i = 0; i < keys.length; i++) {
       const runTip = `${monthLabel(keys[i])} · Interest running ${fmtMoney(cumulative[i])}`;
       out += `<circle class="dot" cx="${cx(i).toFixed(1)}" cy="${yR(cumulative[i]).toFixed(1)}" r="2.5" tabindex="0" data-tip="${esc(runTip)}"><title>${esc(runTip)}</title></circle>`;
@@ -2408,6 +2409,88 @@ const IBKR = (function () {
     if (at >= 0) list.splice(at, 1);
     setInclude(list);
   }
+  // ---------------------------------------------------------------- theme
+
+  /**
+   * Stored theme mode: 'light' | 'dark' | 'system'. Anything else — including
+   * no stored value — is 'system' (follow the OS, the markup default).
+   */
+  function readThemeMode() {
+    const raw = lsGet(THEME_KEY);
+    return raw === 'light' || raw === 'dark' ? raw : 'system';
+  }
+
+  /** OS dark preference, guarded for engines/tests without matchMedia. */
+  function systemPrefersDark() {
+    try {
+      return typeof window !== 'undefined' && typeof window.matchMedia === 'function' &&
+        window.matchMedia('(prefers-color-scheme: dark)').matches === true;
+    } catch (err) { return false; }
+  }
+
+  /** The live (prefers-color-scheme: dark) query while the mode is 'system'. */
+  let themeMq = null;
+
+  /** Subscribe/unsubscribe onSystemThemeChange, covering legacy MediaQueryList.addListener. */
+  function listenThemeMq(current, on) {
+    if (!current) return;
+    if (on && typeof current.addEventListener === 'function') current.addEventListener('change', onSystemThemeChange);
+    else if (on && typeof current.addListener === 'function') current.addListener(onSystemThemeChange);
+    else if (!on && typeof current.removeEventListener === 'function') current.removeEventListener('change', onSystemThemeChange);
+    else if (!on && typeof current.removeListener === 'function') current.removeListener(onSystemThemeChange);
+  }
+
+  /** Point the #themeToggle radios at the applied mode without firing events. */
+  function syncThemeToggle(mode) {
+    if (typeof document === 'undefined' || !document.querySelectorAll) return;
+    const radios = document.querySelectorAll('input[name="themeToggle"]');
+    for (let i = 0; i < radios.length; i++) radios[i].checked = radios[i].value === mode;
+  }
+
+  /**
+   * Apply 'light' | 'dark' | 'system': 'system' resolves against the OS, the
+   * resolution is stamped as [data-theme] on <html> (styles.css's token switch),
+   * the meta theme-color follows the resolved background, the radios sync and the
+   * matchMedia subscription exists only while the mode is 'system' — an OS flip
+   * then repaints live via onSystemThemeChange. The inline boot script in
+   * index.html mirrors this resolution before the stylesheet paints, so a stored
+   * dark reload never flashes light. Persisting the pick is onThemeChange's job;
+   * this function is also the restore/console entry point (window.IBKR.applyTheme).
+   */
+  function applyTheme(mode) {
+    const wanted = mode === 'light' || mode === 'dark' ? mode : 'system';
+    const dark = wanted === 'dark' || (wanted === 'system' && systemPrefersDark());
+    if (typeof document !== 'undefined' && document.documentElement) {
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    }
+    if (typeof document !== 'undefined' && document.querySelector) {
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', dark ? '#0F1419' : '#F7FAFC');
+    }
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      if (wanted !== 'system' && themeMq) { listenThemeMq(themeMq, false); themeMq = null; }
+      if (wanted === 'system' && !themeMq) {
+        themeMq = window.matchMedia('(prefers-color-scheme: dark)');
+        listenThemeMq(themeMq, true);
+      }
+    }
+    syncThemeToggle(wanted);
+  }
+
+  /** OS light/dark flip while the mode is 'system' — repaint immediately. */
+  function onSystemThemeChange() {
+    if (readThemeMode() === 'system') applyTheme('system');
+  }
+
+  /** #themeToggle radio change (radios bubble) — persist the pick, then apply it live. */
+  function onThemeChange() {
+    const checked = typeof document !== 'undefined' && document.querySelector
+      ? document.querySelector('input[name="themeToggle"]:checked') : null;
+    const mode = checked && (checked.value === 'light' || checked.value === 'dark') ? checked.value : 'system';
+    lsSet(THEME_KEY, mode); // 'system' is stored explicitly: it is a real choice, not an absence
+    applyTheme(mode);
+  }
+
   // ------------------------------------------------------------ toolbar fold
 
   /**
@@ -2516,6 +2599,8 @@ const IBKR = (function () {
     listen(byId('dropZone'), 'click', onZoneClick);
     listen(byId('clearBtn'), 'click', clearAll);
     listen(byId('toolbarToggle'), 'click', onToolbarToggle);
+    // theme radios apply live (the inline boot script painted the stored pick already)
+    listen(byId('themeToggle'), 'change', onThemeChange);
     // PWA install affordance (Chromium only; the button stays hidden elsewhere)
     listen(byId('installBtn'), 'click', onInstallClick);
     if (typeof window !== 'undefined') {
@@ -2596,6 +2681,10 @@ const IBKR = (function () {
     if (typeof window !== 'undefined') listen(window, 'resize', measureIncludeOverflow);
     // restore the mobile fold from storage (class + aria only; never persisted here)
     applyToolbarCollapsed(lsGet(TOOLBAR_KEY) === '1');
+    // theme: the inline boot script already painted the stored pick; re-apply it to
+    // sync the radios/meta theme-color and attach the matchMedia listener while the
+    // mode is 'system' (an OS flip then repaints without a reload)
+    applyTheme(readThemeMode());
     syncFxInput();
     const label = byId('fileLabel');
     if (label && !label.textContent.trim() && !hasData()) setFileLabel('No files selected');
@@ -2623,6 +2712,7 @@ const IBKR = (function () {
     getExclude, setExclude, getInclude, setInclude,
     getIncludeScope, setIncludeScope, getExcludeScope, setExcludeScope,
     getAssetFilter, setAssetFilter,
+    applyTheme,
     monthTipText, barTipText, renderInterest, rankedRoots,
     renderTickerList, applyTickerList, clearTickerList, openTickerList, closeTickerList, showTab,
     openCsvHelp, closeCsvHelp,

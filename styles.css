@@ -5,6 +5,7 @@
    ========================================================================== */
 
 :root {
+  color-scheme: light;
   --surface: #F7FAFC;
   --card: #fff;
   --ink: #1f2733;
@@ -35,8 +36,74 @@
   --slate-tint: rgba(160, 174, 192, .20);
   --red-tint: rgba(245, 101, 101, .12);
   --line: #EDF2F7;
+  /* tooltips / overlays / pills / chart chrome (dark values in the theme blocks) */
+  --tooltip-bg: #1f2733;
+  --tooltip-ink: #fff;
+  --backdrop: rgba(21, 25, 40, .48);
+  --shadow-pill: 0 1px 2px rgba(21, 25, 40, .12);
+  --chart-grid: #E2E8F0;
+  --chart-highlight: #4A5568;
+  --icon-green: #2F855A;
+  --icon-slate: #4A5568;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --gap: 24px;
+}
+
+/* ---------------------------------------------------------- theme: dark ---
+   [data-theme] is stamped on <html> by the inline boot script in index.html
+   (before the stylesheet paints) and kept in step by applyTheme() in app.js.
+   The prefers-color-scheme block below duplicates the same tokens for the only
+   case where [data-theme] is absent: before the boot script runs / with JS off.
+   color-scheme flips native chrome (scrollbars, form controls, <select> menu). */
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #0F1419;
+  --card: #1A202C;
+  --ink: #F7FAFC;
+  --muted: #A0AEC0;
+  --border: #2D3748;
+  --line: #252D3C;
+  --chart-line: #63B3ED;
+  --teal-dark: #4FD1C5;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, .5);
+  --shadow-pop: 0 10px 24px rgba(0, 0, 0, .55);
+  --indigo-tint: rgba(102, 126, 234, .20);
+  --indigo: #A3BFFA;
+  --tooltip-bg: #2D3748;
+  --tooltip-ink: #F7FAFC;
+  --backdrop: rgba(0, 0, 0, .6);
+  --shadow-pill: 0 1px 2px rgba(0, 0, 0, .5);
+  --chart-grid: #4A5568;
+  --chart-highlight: #F7FAFC;
+  --icon-green: #68D391;
+  --icon-slate: #CBD5E0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --surface: #0F1419;
+    --card: #1A202C;
+    --ink: #F7FAFC;
+    --muted: #A0AEC0;
+    --border: #2D3748;
+    --line: #252D3C;
+    --chart-line: #63B3ED;
+    --teal-dark: #4FD1C5;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, .5);
+    --shadow-pop: 0 10px 24px rgba(0, 0, 0, .55);
+    --indigo-tint: rgba(102, 126, 234, .20);
+    --indigo: #A3BFFA;
+    --tooltip-bg: #2D3748;
+    --tooltip-ink: #F7FAFC;
+    --backdrop: rgba(0, 0, 0, .6);
+    --shadow-pill: 0 1px 2px rgba(0, 0, 0, .5);
+    --chart-grid: #4A5568;
+    --chart-highlight: #F7FAFC;
+    --icon-green: #68D391;
+    --icon-slate: #CBD5E0;
+  }
 }
 
 /* --------------------------------------------------------------- reset --- */
@@ -188,7 +255,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 .tab[aria-selected="true"] {
   background: var(--card);
   color: var(--ink);
-  box-shadow: 0 1px 2px rgba(21, 25, 40, .12);
+  box-shadow: var(--shadow-pill);
 }
 
 /* the page grid stacks the panels; [hidden] (with !important) wins over this */
@@ -358,7 +425,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   background: var(--teal);
   border-color: var(--teal);
   color: #14202b;
-  box-shadow: 0 2px 4px rgba(21, 25, 40, .18);
+  box-shadow: var(--shadow-pill);
 }
 
 .btn--primary:hover:not([disabled]) { background: var(--teal-dark); border-color: var(--teal-dark); color: #fff; }
@@ -403,6 +470,17 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 }
 
 .select:hover { border-color: var(--muted); }
+
+/* dark theme: the chevron glyph flips to the dark-theme ink (#F7FAFC on #1A202C) */
+:root[data-theme="dark"] .select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23F7FAFC' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23F7FAFC' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+}
 
 /* text input — ticker search (#tickerSearch) and the manual FX rate (#fxInput) */
 .input {
@@ -631,7 +709,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 .segmented__opt input:checked + .segmented__pill {
   background: var(--card);
   color: var(--ink);
-  box-shadow: 0 1px 2px rgba(21, 25, 40, .12);
+  box-shadow: var(--shadow-pill);
 }
 
 .segmented__opt input:focus-visible + .segmented__pill {
@@ -709,8 +787,8 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   max-width: min(340px, calc(100vw - 48px));
   padding: 8px 10px;
   border-radius: 6px;
-  background: #1f2733;
-  color: #fff;
+  background: var(--tooltip-bg);
+  color: var(--tooltip-ink);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.4;
@@ -783,8 +861,8 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 .kpi__icon--teal { background: var(--teal-tint); color: var(--teal-dark); }
 .kpi__icon--indigo { background: var(--indigo-tint); color: var(--indigo); }
-.kpi__icon--green { background: var(--green-tint); color: #2F855A; }
-.kpi__icon--slate { background: var(--slate-tint); color: #4A5568; }
+.kpi__icon--green { background: var(--green-tint); color: var(--icon-green); }
+.kpi__icon--slate { background: var(--slate-tint); color: var(--icon-slate); }
 
 .kpi__value {
   font-size: 27px;
@@ -887,7 +965,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   height: auto;
   max-width: 100%;
   overflow: visible;
-  color: #4A5568; /* app.js draws grid + month highlight with currentColor */
+  color: var(--chart-highlight); /* app.js draws grid + month highlight with currentColor */
 }
 
 /* app.js positions the tip at the bar's top-centre inside .chart-wrap, so the
@@ -907,8 +985,8 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   max-width: calc(100vw - 8px);
   padding: 8px 10px;
   border-radius: 6px;
-  background: #1f2733;
-  color: #fff;
+  background: var(--tooltip-bg);
+  color: var(--tooltip-ink);
   font-size: 12px;
   line-height: 1.35;
   font-variant-numeric: tabular-nums;
@@ -937,8 +1015,8 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
    :not([fill]) / :not([stroke]) keeps the fallback off elements where app.js already
    sets the value as a presentation attribute (a plain CSS colour would override it
    and flatten the green/red bar encoding). */
-.chart .grid { stroke: var(--border); stroke-dasharray: 4 6; stroke-width: 1; }
-.chart .axis { stroke: var(--border); stroke-width: 1; }
+.chart .grid { stroke: var(--chart-grid); stroke-dasharray: 4 6; stroke-width: 1; }
+.chart .axis { stroke: var(--chart-grid); stroke-width: 1; }
 /* x-axis tick marks in the month slots whose label is thinned away */
 .chart .tick { stroke: var(--muted); stroke-width: 1; }
 .chart .chart__hint { fill: var(--muted); font-size: 13px; font-family: var(--font); }
@@ -1128,11 +1206,11 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 .dropzone.is-dragover {
   border-color: var(--teal);
-  background: #F0FFFD;
+  background: var(--surface);
   box-shadow: inset 0 0 0 3px var(--teal-tint);
 }
 
-.dropzone.is-dragover .empty__icon { background: #fff; }
+.dropzone.is-dragover .empty__icon { background: var(--card); }
 
 .empty {
   display: grid;
@@ -1159,6 +1237,13 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   max-width: 48ch;
   font-size: 14.5px;
   color: #718096;
+}
+
+/* dark theme: #718096 lands at ~4.1:1 on the dark card — lift it to --muted */
+:root[data-theme="dark"] .empty__text { color: var(--muted); }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .empty__text { color: var(--muted); }
 }
 
 .empty .btn { margin-top: 6px; }
@@ -1195,12 +1280,28 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   color: #822727;
 }
 
+/* dark theme: the error alert keeps its warm hue but swaps to the dark
+   Chakra red ramp so it never paints a near-white block on the dark surface */
+:root[data-theme="dark"] .alert--error {
+  border-color: #FC8181;
+  background: #742A2A;
+  color: #FED7D7;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .alert--error {
+    border-color: #FC8181;
+    background: #742A2A;
+    color: #FED7D7;
+  }
+}
+
 .alert--error .alert__icon { color: var(--red); }
 
 .alert--info {
   border-color: var(--border);
   background: var(--card);
-  color: #4A5568;
+  color: var(--icon-slate); /* #4A5568 light / #CBD5E0 dark — same token as tile icons */
 }
 
 .alert--info .alert__icon { color: var(--teal-dark); }
@@ -1322,8 +1423,8 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   max-width: min(420px, calc(100vw - 32px));
   padding: 8px 10px;
   border-radius: 6px;
-  background: #1f2733;
-  color: #fff;
+  background: var(--tooltip-bg);
+  color: var(--tooltip-ink);
   font-size: 12px;
   line-height: 1.4;
   text-align: left;
@@ -1356,7 +1457,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   box-shadow: var(--shadow-pop);
 }
 
-dialog::backdrop { background: rgba(21, 25, 40, .48); }
+dialog::backdrop { background: var(--backdrop); }
 
 /* search box with its inline clear button (#tickerSearchClear) */
 .ticker-search { position: relative; }
@@ -1412,7 +1513,7 @@ body.modal-fallback-open::before {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(21, 25, 40, .48);
+  background: var(--backdrop);
 }
 
 .modal__title { font-size: 17px; }

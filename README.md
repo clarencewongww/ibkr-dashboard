@@ -266,6 +266,29 @@ memory; nothing is rewritten.
 - **Attribution.** The footer keeps the required rates attribution link to **Exchange Rate API**;
   no statement data is requested by or sent to it.
 
+### Theme (light / dark / system)
+
+The toolbar's **Light / Dark / System** switch (next to USD/AUD) repaints the whole dashboard —
+all colours come from the `:root` token block in `styles.css`, so the dark theme is a token
+override, not a second stylesheet.
+
+- **Live, no round-trip.** `app.js` stamps `data-theme="light|dark"` on `<html>`; `styles.css`
+  switches ~20 tokens (surface, card, ink, muted, borders, shadows, chart line/grid, tooltip,
+  backdrop, KPI icon inks) in one block. `color-scheme` follows, so native scrollbars and the
+  `<select>` menu render dark too, and the `<meta name="theme-color">` matches the resolved
+  background.
+- **No flash.** An inline boot script in `index.html` `<head>` resolves the stored pick *before*
+  the stylesheet paints, so reloading in dark never flashes the light shell; app.js then re-applies
+  it (and syncs the radios) on `wire()`.
+- **System follows the OS.** In **System** mode the app subscribes to
+  `matchMedia('(prefers-color-scheme: dark)')`: flipping the OS (or a browser
+  auto-dark schedule) repaints instantly, no reload. Light/Dark pin the choice regardless of the OS.
+- **Persistence.** The pick is stored in `localStorage` under **`ibkr-theme-v1`** (`light`, `dark`
+  or `system`); absent means system. It is a UI preference only — clearing it changes nothing about
+  your data, and `Clear` does not touch it.
+- **Zero network.** The theme adds no assets and no requests (all colours are CSS tokens; tooltips
+  and backdrops are tokenised) — `file://` stays completely offline.
+
 ---
 
 ## 4. Privacy
@@ -296,7 +319,7 @@ memory; nothing is rewritten.
 | `styles.css` | All styling and design tokens (CSS custom properties in `:root`); no external assets. |
 | `app.js` | CSV parser (Flex + Activity Statement), month aggregation, root-symbol include/exclude filter with per-kind scopes, session-only asset filter, USD/AUD rate chain, rendering. Exposes `window.IBKR` for debugging. |
 | `manifest.webmanifest` | PWA manifest (`start_url`/`scope`/`id` are `./` so the install works under the Pages sub-path). |
-| `sw.js` | Offline-shell service worker (`ibkr-shell-v2`): allowlisted shell files only, scope resolved from its own URL; never touches CSVs, `data/` or the FX lookups. |
+| `sw.js` | Offline-shell service worker (`ibkr-shell-v3`): allowlisted shell files only, scope resolved from its own URL; never touches CSVs, `data/` or the FX lookups. |
 | `icons/` | PWA icons shipped with the app (`icon.svg`, 192/512, maskable-512, apple-touch-180) — tracked, unlike screengrabs. |
 | `Start-Dashboard.sh` | Kill-then-start launcher: frees port 8000, serves this folder on **127.0.0.1** and opens the page. |
 | `IBKR P&L Dashboard.app` | Double-click wrapper around `Start-Dashboard.sh`; no Terminal window (right-click **Open** on first launch only). |
@@ -354,7 +377,7 @@ workers need http/https, so always install from the launcher's URL, not from a F
 > installed. Remove a stale install in **`brave://apps`**, then clear the site's cached data —
 > **`brave://settings/content/all`** → `127.0.0.1:8000` → delete (or DevTools → **Application →
 > Storage → Clear site data**) — reload, and wait ~30 seconds: the service worker re-registers
-> (`ibkr-shell-v2`) and the button comes back. **iOS/Safari:** there is no install prompt at all —
+> (`ibkr-shell-v3`) and the button comes back. **iOS/Safari:** there is no install prompt at all —
 > use **Share → Add to Home Screen**.
 
 > **Already installed from an earlier build?** The PWA icons changed, but an existing install keeps
@@ -367,7 +390,7 @@ workers need http/https, so always install from the launcher's URL, not from a F
 
 `sw.js` registers when the page is served over http(s) and caches **only the static shell** —
 `index.html`, `styles.css`, `app.js`, `manifest.webmanifest` and the icons — in cache
-**`ibkr-shell-v2`**. It is network-first: fresh files win while the server is up; if the server is
+**`ibkr-shell-v3`**. It is network-first: fresh files win while the server is up; if the server is
 down, the cached shell is served instead, so the installed app still opens and renders (statement
 data still comes from the in-page state / `localStorage` as before). **CSV files, `/data/*` and the
 cross-origin FX lookups are never intercepted and never cached** — statement data stays out of
@@ -413,7 +436,7 @@ The repo is deployable as a static site — **code only, never data**.
   app…**). HTTPS makes it installable even on a phone; the manifest and icons are served from the
   sub-path, so no signed-in GitHub session is needed to *use* the installed app.
 - **Offline:** the service worker caches only the shell (`index.html`, `styles.css`, `app.js`,
-  `manifest.webmanifest`, the five icons) in `ibkr-shell-v2`, network-first with the cached shell as
+  `manifest.webmanifest`, the five icons) in `ibkr-shell-v3`, network-first with the cached shell as
   the offline fallback. Reloading the Pages URL with no connection still opens the dashboard; the last
   parsed file is restored from `localStorage` as usual (≤ 2 MB, key `ibkr-v1`, `Clear` wipes it).
 
