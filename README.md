@@ -178,19 +178,24 @@ code paths, so every row of days sums to the month row it belongs to.
 - **Cells.** Day number · the day's net P&L (`pos`/`neg`) · `N trade(s)`. Days with no activity stay
   bare. A day's money total includes trade P&L and that day's cash buckets (interest, dividends,
   withholding, fees), so a cash-only day shows money without a trade count. Below 620px the trade
-  count hides and the money switches to a compact form (`$1.7k` instead of `$1,739.94`) so every
-  cell stays legible.
-- **Heat tint.** Each day with a non-zero total gets a green (or red) tint whose alpha scales to
-  the day's `|P&L|` against the largest day in the *shown month*, capped well below the text
-  contrast — deliberately theme-neutral, so it reads the same in light and dark. (`aggregateByDay()`
-  also returns a file-wide `maxAbs` for callers that want one scale across months.)
+  count hides and the money switches to a compact, cents-free form sized for a 375px cell; a
+  value that would spill keeps its sign and magnitude but drops the `$` (`$420`, `$2k`, `-$13`,
+  then `1.7k`, `-617`, `-12k`). The full `fmtMoney` value stays in its `title`/`aria-label`.
+- **Heat tint.** Each in-month day with a non-zero total gets a green (or red) tint whose alpha
+  scales to the day's `|P&L|` against the largest day in the *shown month* (capped at a fixed
+  ceiling well below the text contrast) — deliberately theme-neutral, so it reads the same in
+  light and dark. Adjacent-month cells stay dimmed and are never tinted, so a neighbouring day's
+  bigger total can't bleed into the shown month's scale. (`aggregateByDay()` also returns a
+  file-wide `maxAbs` for callers that want one scale across months.)
 - **Today & selection.** Today's day number carries a teal ring; clicking (or **Enter** on) a cell
   toggles the selected white/ink ring. **Escape** clears it. Arrow keys walk the grid (← → by a
   day, ↑ ↓ by a week); every cell keeps a full `title`/`aria-label` (`Monday, January 5, 2026 ·
   $391.00 · 2 trades`).
-- **Navigation.** `‹` / `›` step one month (crossing years), **Today** snaps back to the current
-  month — the calendar shows days even where the file has no rows yet, so navigating past the last
-  month is a normal empty month, not an error. Months outside the shown one are dimmed.
+- **Navigation.** `‹` / `›` step one month, crossing years while the year filter is *All years*;
+  with a year selected they stop at that year's bounds and **Today** snaps back to the current
+  month, clamped into the selected year (its latest month with data when today falls outside it).
+  The calendar shows days even where the file has no rows yet, so navigating past the last month
+  is a normal empty month, not an error. Months outside the shown one are dimmed.
 - **Empty.** Until a CSV is loaded the card keeps the placeholder and hides the weekday row.
 
 ### Exclude

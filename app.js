@@ -145,6 +145,33 @@ const IBKR = (function () {
     if (a === 0) return sym + '0';
     return (n < 0 ? '-' : '') + sym + Math.round(a);
   }
+  /**
+   * Compact money for the narrow daily-calendar cells. Cents are always dropped and
+   * the k scale keeps its tenth only when non-zero ("$2k", not "$2.0k"), because a
+   * 375px cell's content box fits roughly four glyphs at 11px/700 (~30px). Anything
+   * still longer than four glyphs sheds the currency symbol — the sign, colour and the
+   * full fmtMoney value in the cell's title/aria-label keep the meaning:
+   * "$420" / "$2k" / "1.7k" / "-617" / "-$8k".
+   */
+  function fmtCellMoney(value, currency) {
+    const cur = currency === 'aud' || currency === 'usd' ? currency : currencyMode();
+    const n = (Number(value) || 0) * fxRateFor(cur);
+    const a = Math.abs(n), sym = cur === 'aud' ? 'A$' : '$';
+    const sign = n < 0 ? '-' : '';
+    let text;
+    if (a >= 999.5) {
+      const k = a < 10000 ? (a / 1000).toFixed(1).replace(/\.0$/, '') : String(Math.round(a / 1000));
+      text = sign + sym + k + 'k';
+      // The sign costs a glyph, so a signed value that still carries a k decimal
+      // falls back to whole thousands ("-$8.4k" → "-$8k") — the exact figure stays
+      // in the cell's title/aria-label.
+      if (sign && text.length > 4) text = sign + sym + Math.round(a / 1000) + 'k';
+    } else {
+      const whole = Math.round(a);
+      text = (whole === 0 ? sym : sign + sym) + whole;
+    }
+    return text.length > 4 ? text.replace(sym, '') : text;
+  }
 
   // ------------------------------------------------------------------ CSV
 
@@ -1582,12 +1609,13 @@ const IBKR = (function () {
   /**
    * Daily P&L calendar (#dailyGrid): a Sun-first month grid of button.cal-cell rows —
    * day number · fmtMoney(day total) · "N trades", with a green/red heat tint scaled to
-   * the shown month's largest |day total| (a file-wide max would flatten most months).
-   * Month title + Monthly P&L pill come from the same day buckets, so the pill always
-   * equals the month row's total.
+   * the shown month's largest |day total| (a file-wide max would flatten most months) and
+   * painted on in-month days only. Month title + Monthly P&L pill come from the same day
+   * buckets, so the pill always equals the month row's total.
    * States: .cal-cell--dim (adjacent month), .cal-cell--today (teal ring on the day
    * number), .cal-cell--sel (selected, white ring). Keyboard: arrows move focus, Enter
-   * clicks (selects/toggles), Escape clears the selection. Nav ‹ › walk whole months.
+   * clicks (selects/toggles), Escape clears the selection. Nav ‹ › walk whole months,
+   * bounded by the toolbar year filter (the shown ym is clamped into that year).
    * Every lookup is null-safe: shells without the card skip it entirely.
    */
   function renderDaily(months) {
@@ -1605,8 +1633,16 @@ const IBKR = (function () {
     });
 
     const available = (months && Object.keys(months).length ? Object.keys(months) : Object.keys(agg.monthTotals)).sort();
+    // Year filter: the calendar is clamped inside the selected year, so a stale ym,
+    // ‹ / › or Today can never leave it (bounds come from the months the file has).
+    const yearActive = !!state.year && state.year !== 'all';
+    const yearMonths = yearActive ? available.filter(k => k.slice(0, 4) === state.year) : available;
+    const pool = yearActive && yearMonths.length ? yearMonths : available;
     if (!state.daily.ym || !/^\d{4}-\d{2}$/.test(state.daily.ym)) {
-      state.daily.ym = available.length ? available[available.length - 1] : currentYm();
+      state.daily.ym = pool.length ? pool[pool.length - 1] : currentYm();
+    } else if (yearActive && yearMonths.length && state.daily.ym.slice(0, 4) !== state.year) {
+      state.daily.ym = yearMonths[yearMonths.length - 1]; // jump to the year's latest month
+      state.daily.sel = null;                            // the old selection lives in another year
     }
 
     if (!available.length) { // no rows at all: the shell's :has placeholder covers the grid
@@ -1657,17 +1693,22 @@ const IBKR = (function () {
       if (c.key === today) classes.push('cal-cell--today');
       if (c.key === state.daily.sel) classes.push('cal-cell--sel');
       let tint = '';
-      if (total !== 0 && maxAbs > 0) {
-        const alpha = Math.abs(total) / maxAbs * 0.28;
+      // Adjacent-month cells are context only — they are dimmed and never tinted
+      // (their totals can also exceed the shown month's maxAbs and skew the scale).
+      if (c.inMonth && total !== 0 && maxAbs > 0) {
+        const alpha = Math.min(Math.abs(total) / maxAbs * 0.28, 0.28);
         tint = ` style="background:rgba(${total > 0 ? '72,187,120' : '245,101,101'},${alpha.toFixed(3)})"`;
       }
       const money = fmtMoney(total);
-      const short = fmtCompact(total);
+      const short = fmtCellMoney(total);
       const tradeText = count === 1 ? '1 trade' : count + ' trades';
-      const label = `${WEEKDAY_NAMES[c.dow]}, ${MONTH_FULL[+c.key.slice(5, 7) - 1]} ${c.day}, ${c.key.slice(0, 4)} · ${money} · ${tradeText}`;
+      // aria-label/title carry the full value: money always, trades only when there are any.
+      const label = `${WEEKDAY_NAMES[c.dow]}, ${MONTH_FULL[+c.key.slice(5, 7) - 1]} ${c.day}, ${c.key.slice(0, 4)} · ${money}` +
+        (count ? ` · ${tradeText}` : '');
       const pnlCls = total > 0 ? 'pos' : total < 0 ? 'neg' : '';
-      // Two money spans: the full fmtMoney value everywhere, swapped for fmtCompact on
-      // narrow screens (styles.css) where a "$1,739.94" string would ellipsise to "$…".
+      // Two money spans: the full fmtMoney value everywhere, swapped for the
+      // compact fmtCellMoney on narrow screens (styles.css), where a
+      // "$1,739.94" or "$1.7k" string would ellipsise to "$…".
       return `<button class="${classes.join(' ')}" type="button" role="gridcell" data-day="${c.key}"` +
         ` tabindex="${c.key === roving ? '0' : '-1'}" aria-label="${esc(label)}" title="${esc(label)}"${tint}>` +
         `<span class="cal-day">${c.day}</span>` +
@@ -2583,15 +2624,32 @@ const IBKR = (function () {
     if (/^\d{4}-\d{2}$/.test(key)) { state.year = key.slice(0, 4); state.month = key.slice(5, 7); }
     renderAll();
   }
+  /** Months the rendered aggregate has in the active year filter ('all' → null). */
+  function yearMonthKeys() {
+    if (!state.year || state.year === 'all') return null;
+    return Object.keys(state.months).filter(k => k.slice(0, 4) === state.year).sort();
+  }
+  /** Clamp a 'yyyy-MM' into the active year: outside it, jump to that year's latest month. */
+  function clampDailyYm(ym) {
+    const keys = yearMonthKeys();
+    if (!keys || !keys.length || ym.slice(0, 4) === state.year) return ym;
+    return keys[keys.length - 1];
+  }
   /** Daily tab navigation: swap the shown month (or snap to today's) and re-render just the calendar. */
   function dailyGoTo(ym) {
-    state.daily.ym = ym;
+    state.daily.ym = clampDailyYm(ym);
     state.daily.sel = null;
     renderDaily(state.months);
   }
-  function onDailyPrev() { dailyGoTo(shiftMonth(state.daily.ym || currentYm(), -1)); }
-  function onDailyNext() { dailyGoTo(shiftMonth(state.daily.ym || currentYm(), 1)); }
-  function onDailyToday() { dailyGoTo(currentYm()); }
+  /** ‹ / › walk one month, but stop at the active year's bounds (no cross-year walk). */
+  function dailyStep(delta) {
+    const next = shiftMonth(state.daily.ym || currentYm(), delta);
+    if (state.year && state.year !== 'all' && next.slice(0, 4) !== state.year) return;
+    dailyGoTo(next);
+  }
+  function onDailyPrev() { dailyStep(-1); }
+  function onDailyNext() { dailyStep(1); }
+  function onDailyToday() { dailyGoTo(currentYm()); } // clampDailyYm handles the year filter
   /** Cell click / Enter: toggle the white selection ring (Escape clears it). */
   function onDailyCellClick(e) {
     const btn = e.target && e.target.closest ? e.target.closest('#dailyGrid .cal-cell[data-day]') : null;
@@ -2626,8 +2684,8 @@ const IBKR = (function () {
     const at = cells.indexOf(cell);
     const step = key === 'ArrowLeft' ? -1 : key === 'ArrowRight' ? 1 : key === 'ArrowUp' ? -7 : 7;
     const next = at < 0 ? null : cells[at + step];
+    e.preventDefault(); // arrows must not scroll the page, even at a grid edge
     if (!next) return;
-    e.preventDefault(); // arrows must not scroll the page
     if (typeof next.focus === 'function') next.focus();
   }
   function onChartMove(e) {

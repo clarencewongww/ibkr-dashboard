@@ -1076,6 +1076,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 .cal-pnl {
   max-width: 100%;
+  min-width: 0; /* flex item: may shrink to the cell's content box, never past it */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1105,7 +1106,12 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 #dailyCard:has(#dailyGrid:empty) .table-placeholder { display: block; }
 
 @media (max-width: 620px) {
-  .cal-cell { min-height: 56px; padding: 4px 6px; }
+  /* 375px: ~305px of grid over 7 tracks. 4px gutters + 4px cell padding leave a
+     ~30px content box — exactly the width of the compact "$420" — so both tighten
+     here before app.js falls back to the decimal-free fmtCellMoney twin. */
+  .cal-head,
+  .cal-grid { gap: 4px; }
+  .cal-cell { min-height: 56px; padding: 4px; }
   .cal-meta { display: none; }
   .cal-pnl { font-size: 11px; }
   .cal-pnl--full { display: none; }
