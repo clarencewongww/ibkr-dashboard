@@ -89,13 +89,17 @@
                         pos/neg class; the card head pill wraps it
              #dailyPrev / #dailyNext — ±1 month (crosses years); #dailyToday — jump
                         back to the current month; all real buttons, app.js wired
-             #dailyPickerBtn — calendar-glyph button beside ‹ › (aria-haspopup="dialog",
-                        aria-controls="dailyPicker"): opens the #dailyPicker <dialog>
-                        (Year + Month selects, Go / Close — same native showModal /
-                        open-attribute contract as the other dialogs; Esc, backdrop and
-                        outside-click close it and focus returns to the opener). The
-                        jump respects the toolbar year clamp: the Year select pins to
-                        the selected year, and renderDaily()'s clamp is reused.
+             #dailyPickerBtn — calendar-glyph button leading the bar (before ‹ ›)
+                        (aria-haspopup="dialog", aria-controls="dailyPicker"): opens
+                        the #dailyPicker <dialog> (Year + Month selects, Go / Close —
+                        same native showModal / open-attribute contract as the other
+                        dialogs; Esc, backdrop and outside-click close it and focus
+                        returns to the opener). The dialog carries tabindex="-1":
+                        app.js focuses the dialog itself, never the Year select, so
+                        opening it pops no select wheel / keyboard; Tab then reaches
+                        Year, then Month. The jump respects the toolbar year clamp:
+                        the Year select pins to the selected year, and
+                        renderDaily()'s clamp is reused.
              #dailyGrid — role=grid calendar: app.js renders 7-column, Monday-first
                         button.cal-cell[data-day] cells (day number · P&L · "N trades",
                         heat tint by |P&L|; .cal-cell--dim / --today / --sel states).
@@ -108,6 +112,11 @@
                         cash rows only — never counted as trades). A day with no rows
                         shows #dailyDetailEmpty ("No activity this day."); a cash-only
                         day keeps the trades group with its "No trades this day." line.
+                        On touch / ≤620px selecting a day scrolls this card under the
+                        sticky toolbar (scroll-margin-top in styles.css) and
+                        #dailyDetailTop — the up-arrow button in this card's head,
+                        shown at those widths only — returns to #dailyCard with the
+                        selected cell re-focused (preventScroll).
              the card's .table-placeholder shows while #dailyGrid is empty (:has CSS)
   Tickers    #tickerBtn — opens #tickerModal; its label text is app.js-owned ("Tickers (n)")
              #tickerModal <dialog> · #assetToggle fieldset (radios name="assetToggle",
@@ -121,6 +130,8 @@
              buttons. Row checkboxes + scopes stay pending until Apply; Clear resets them
              and #assetToggle. app.js calls showModal()/close(); Esc/backdrop are
              native (an open-attribute fallback takes over when showModal is unavailable).
+             On fine pointers app.js also focuses #tickerSearch (user-initiated);
+             on touch it leaves the dialog's default focus so no keyboard pops.
              .ticker-list/.ticker-row styles live in styles.css.
              #includeChips — chip contract: button.chip[data-ticker] with
              aria-pressed="true" (its label/title name the scope); click removes the
@@ -749,19 +760,9 @@
         </div>
       </div>
 
-      <!-- prev/next are real buttons (also reachable by keyboard); "Today" snaps the
-           title month back to the current one. app.js owns the month state. -->
+      <!-- picker first, then prev/next (all real buttons, also reachable by keyboard);
+           "Today" snaps the title month back to the current one. app.js owns the month state. -->
       <div class="cal-bar">
-        <span class="cal-bar__icon" aria-hidden="true">
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <rect width="18" height="18" x="3" y="4" rx="2"></rect>
-            <path d="M3 10h18"></path>
-            <path d="M8 2v4"></path>
-            <path d="M16 2v4"></path>
-          </svg>
-        </span>
-        <button id="dailyPrev" class="cal-nav" type="button" aria-label="Previous month">‹</button>
-        <button id="dailyNext" class="cal-nav" type="button" aria-label="Next month">›</button>
         <button id="dailyPickerBtn" class="cal-nav cal-nav--picker" type="button"
                 aria-label="Jump to month and year" title="Jump to month and year"
                 aria-haspopup="dialog" aria-controls="dailyPicker">
@@ -772,6 +773,8 @@
             <path d="M16 2v4"></path>
           </svg>
         </button>
+        <button id="dailyPrev" class="cal-nav" type="button" aria-label="Previous month">‹</button>
+        <button id="dailyNext" class="cal-nav" type="button" aria-label="Next month">›</button>
         <button id="dailyToday" class="cal-today" type="button">Today</button>
       </div>
 
@@ -793,6 +796,10 @@
           <h3 class="card__title cal-title cal-detail__date" id="dailyDetailDate">Day</h3>
         </div>
         <div class="card__head-actions">
+          <!-- phones/coarse pointers only (styles.css): jumps back to #dailyCard and
+               re-focuses the selected cell — app.js onDailyDetailTop -->
+          <button id="dailyDetailTop" class="cal-nav" type="button"
+                  aria-label="Back to calendar" title="Back to calendar">↑</button>
           <span class="cal-pill">Day P&amp;L: <strong id="dailyDetailPill" class="num">—</strong></span>
         </div>
       </div>
@@ -978,8 +985,10 @@
      covers engines without showModal, and closing hands focus back to the opener.
      The Year select pins to the global year filter while one is active; "All
      years" (only offered when the filter is All years) jumps to the latest year
-     on record holding the chosen month. -->
-<dialog id="dailyPicker" class="modal modal--sm" aria-labelledby="dailyPickerTitle">
+     on record holding the chosen month. tabindex="-1": app.js focuses this dialog
+     on open (not the Year select) so the iOS wheel never pops; Tab reaches Year
+     then Month. -->
+<dialog id="dailyPicker" class="modal modal--sm" aria-labelledby="dailyPickerTitle" tabindex="-1">
   <h2 class="modal__title" id="dailyPickerTitle">Jump to month</h2>
   <div class="picker-fields">
     <label class="field">

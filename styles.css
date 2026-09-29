@@ -503,6 +503,12 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 .input:hover { border-color: var(--muted); }
 .input:focus-visible { border-color: var(--teal); }
 
+/* iOS Safari zooms the whole page when a focused field computes under 16px; phones
+   keep every text input at 16px (the ticker search is the one that opens in a dialog). */
+@media (max-width: 620px) {
+  .input { font-size: 16px; }
+}
+
 /* the FX rate sits on the hero gradient, so it inverts */
 .field--fx .input {
   width: 112px;
@@ -994,8 +1000,6 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   margin-bottom: 12px;
 }
 
-.cal-bar__icon { display: inline-flex; margin-right: 4px; color: var(--muted); }
-
 .cal-nav,
 .cal-today {
   min-height: 30px;
@@ -1101,7 +1105,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   font-size: 11px;
 }
 
-/* calendar-glyph picker beside ‹ ›: icon-only, same chrome as the nav buttons */
+/* calendar-glyph picker (leads the bar, before ‹ ›): icon-only, same chrome as the nav buttons */
 .cal-nav--picker { display: inline-flex; align-items: center; justify-content: center; }
 .cal-nav--picker .icon { width: 15px; height: 15px; }
 
@@ -1110,6 +1114,20 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
    same aggregateByDay() pass as the cells. Hidden attribute until a day is picked. */
 .cal-detail { min-width: 0; }
 .cal-detail__date { font-size: 19px; }
+
+/* Phone scrolls: scrollIntoView('start') on either card must clear the sticky
+   toolbar so the card head is never covered. 76px is the folded-band baseline;
+   app.js's scrollIntoViewSoft raises scroll-margin-top to the band's live height
+   while the mobile toolbar is expanded. */
+#dailyCard,
+#dailyDetail { scroll-margin-top: 76px; }
+
+/* #dailyDetailTop — "Back to calendar" ghost button in the detail head; hidden
+   everywhere except phones / coarse pointers (app.js wires the scroll-back). */
+#dailyDetailTop { display: none; }
+@media (max-width: 620px), (pointer: coarse) {
+  #dailyDetailTop { display: inline-flex; align-items: center; justify-content: center; }
+}
 
 .cal-detail__heading {
   display: flex;

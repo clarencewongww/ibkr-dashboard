@@ -659,6 +659,40 @@ const IBKR = (function () {
     return null;
   }
   const hasData = () => state.trades.length > 0 || state.cash.length > 0;
+  /**
+   * Touch-first device: coarse pointer or any touch points. Dialogs skip their
+   * auto-focus for it (no soft keyboard / select wheel without a user gesture) and
+   * the daily calendar opts into its phone-only scroll behaviours.
+   */
+  function isCoarsePointer() {
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      try { if (window.matchMedia('(pointer: coarse)').matches) return true; } catch (err) { /* unsupported query */ }
+    }
+    return typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
+  }
+  /** Media-query match, guarded for engines (and tests) without matchMedia. */
+  function matchesMedia(query) {
+    return typeof window !== 'undefined' && typeof window.matchMedia === 'function' &&
+      window.matchMedia(query).matches === true;
+  }
+  /**
+   * scrollIntoView with the shared reduced-motion guard (same rule as onToTopTickers):
+   * smooth by default, auto when the OS asks for reduced motion. The sticky toolbar's
+   * live height becomes scroll-margin-top, so the target always lands clear of the band
+   * even when the mobile toolbar is expanded (the styles.css 76px base matches its
+   * folded height only).
+   */
+  function scrollIntoViewSoft(el, block) {
+    if (!el || typeof el.scrollIntoView !== 'function') return;
+    if (typeof document !== 'undefined' && el.style) {
+      const toolbar = document.querySelector ? document.querySelector('.toolbar') : null;
+      if (toolbar && typeof toolbar.getBoundingClientRect === 'function') {
+        const band = Math.round(toolbar.getBoundingClientRect().height);
+        if (band > 0) el.style.scrollMarginTop = (band + 8) + 'px';
+      }
+    }
+    el.scrollIntoView({ behavior: matchesMedia('(prefers-reduced-motion: reduce)') ? 'auto' : 'smooth', block: block || 'start' });
+  }
   function setText(id, text) { const el = byId(id); if (el) el.textContent = text; }
   /** setTitle("#id", text) — independent of setDelta/setText so a tooltip survives text rewrites. */
   function setTitle(id, text) { const el = byId(id); if (el) el.title = text || ''; }
@@ -1664,7 +1698,8 @@ const IBKR = (function () {
    * clicks (selects/toggles), Escape clears the selection. Nav ‹ › walk whole months,
    * bounded by the toolbar year filter (the shown ym is clamped into that year); the
    * calendar-glyph picker (#dailyPickerBtn) jumps straight to a month. A selected day
-   * also renders its detail panel below the grid (#dailyDetail).
+   * also renders its detail panel below the grid (#dailyDetail); on touch/≤620px the
+   * click scrolls it under the sticky toolbar and #dailyDetailTop leads back to the grid.
    * Every lookup is null-safe: shells without the card skip it entirely.
    */
   function renderDaily(months) {
@@ -2479,7 +2514,11 @@ const IBKR = (function () {
     }
   }
 
-  /** Open the picker: sync the global asset radios, render fresh rows, show the dialog, focus search. */
+  /**
+   * Open the picker: sync the global asset radios, render fresh rows, show the dialog.
+   * Focus #tickerSearch only on fine pointers — on touch the dialog keeps its default
+   * focus (the checked asset radio) so no soft keyboard pops over the list.
+   */
   function openTickerList() {
     syncAssetToggle();
     renderTickerList();
@@ -2495,7 +2534,9 @@ const IBKR = (function () {
       if (typeof document !== 'undefined' && document.body) document.body.classList.add('modal-fallback-open');
     }
     const search = pickById(TICKER_IDS.search);
-    if (search && typeof search.focus === 'function') search.focus();
+    // User-initiated focus (Tickers button / '+n' chip) only on a fine pointer; the
+    // touch branch deliberately leaves the dialog's default focus alone.
+    if (!isCoarsePointer() && search && typeof search.focus === 'function') search.focus();
   }
   /** True while the picker is open through the open-attribute fallback. */
   function tickerFallbackOpen() {
@@ -2860,7 +2901,11 @@ const IBKR = (function () {
     return year + '-' + month;
   }
 
-  /** Open the picker: refresh the selects, show the dialog, focus the first enabled control. */
+  /**
+   * Open the picker: refresh the selects, show the dialog, focus the dialog itself.
+   * Never the Year <select>: a focused select pops the iOS wheel and can jump the page.
+   * #dailyPicker carries tabindex="-1" for this; Tab from the dialog reaches Year, then Month.
+   */
   function openDailyPicker() {
     const dialog = byId('dailyPicker');
     if (!dialog) return;
@@ -2874,10 +2919,7 @@ const IBKR = (function () {
       dialog.classList.add('modal--fallback');
       if (typeof document !== 'undefined' && document.body) document.body.classList.add('modal-fallback-open');
     }
-    const yearSel = byId('dailyPickerYear');
-    const monthSel = byId('dailyPickerMonth');
-    const first = yearSel && !yearSel.disabled ? yearSel : monthSel;
-    if (first && typeof first.focus === 'function') first.focus();
+    if (typeof dialog.focus === 'function') dialog.focus();
   }
 
   /** True while #dailyPicker is open through the open-attribute fallback. */
@@ -2950,8 +2992,26 @@ const IBKR = (function () {
     renderDaily(state.months);
     // Re-render replaces the button, which would drop keyboard focus to <body> —
     // hand it back to the same day so arrows keep walking from there and Esc still lands on a cell.
+    // preventScroll: the refocus must never chase the cell (touch browsers scroll a
+    // freshly focused control into view); the phone scroll below owns the viewport.
     const again = byId('dailyGrid') && byId('dailyGrid').querySelector('.cal-cell[data-day="' + key + '"]');
-    if (again && typeof again.focus === 'function') again.focus();
+    if (again && typeof again.focus === 'function') again.focus({ preventScroll: true });
+    // Touch / phone: bring the opened detail card under the sticky toolbar (its
+    // scroll-margin-top reserves the band). Keyboard users on desktop keep their view.
+    const detail = byId('dailyDetail');
+    if (state.daily.sel && detail && !detail.hidden && (isCoarsePointer() || matchesMedia('(max-width: 620px)'))) {
+      scrollIntoViewSoft(detail, 'start');
+    }
+  }
+  /**
+   * #dailyDetailTop ("Back to calendar", phones/touch only): return to the calendar card —
+   * focus the selected cell without scrolling, then bring #dailyCard under the sticky toolbar.
+   */
+  function onDailyDetailTop() {
+    const grid = byId('dailyGrid');
+    const cell = grid && state.daily.sel ? grid.querySelector('.cal-cell--sel[data-day]') : null;
+    if (cell && typeof cell.focus === 'function') cell.focus({ preventScroll: true });
+    scrollIntoViewSoft(byId('dailyCard'), 'start');
   }
   /** Arrow keys walk the grid (7 = one week); Escape clears the selection and refocuses the cell. */
   function onDailyGridKeydown(e) {
@@ -3224,6 +3284,7 @@ const IBKR = (function () {
     }
     listen(byId('dailyGrid'), 'click', onDailyCellClick);
     listen(byId('dailyGrid'), 'keydown', onDailyGridKeydown);
+    listen(byId('dailyDetailTop'), 'click', onDailyDetailTop);
     // interest rows carry data-month too: the same click selects the month
     listen(pickById(['interestBody', 'interestTableBody']), 'click', onRowClick);
     listen(byId('postedToggle'), 'change', renderAll);

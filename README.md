@@ -199,21 +199,29 @@ code paths, so every row of days sums to the month row it belongs to.
   and cash walk (`aggregateByDay().rows` is collected in the same pass as the day buckets), so
   **day total = trades net + income net = the clicked cell's total**, and income never counts as
   a trade: a cash-only day keeps its money and shows the trades group with *No trades this day.*,
-  a day with neither shows *No activity this day.*.
+  a day with neither shows *No activity this day.*. On touch devices and phones (≤620px) picking
+  a day also scrolls the detail card into view below the sticky toolbar, and the card head then
+  carries an up-arrow **Back to calendar** button (shown at those widths only) that returns to
+  the calendar card with the selected cell re-focused — re-focusing never moves the viewport
+  itself (`preventScroll`), so touch only scrolls where it means to.
 - **Today & selection.** Today's day number carries a teal ring; clicking the same cell again
   (or pressing **Enter** twice) toggles the selection and the detail off. **Escape** clears it.
   Arrow keys walk the grid (← → by a day, ↑ ↓ by a week); every cell keeps a full
   `title`/`aria-label` (`Monday, January 5, 2026 · $391.00 · 2 trades`), and focus returns to the
-  same cell after each re-render.
+  same cell after each re-render (without scrolling the viewport on touch — there the view
+  follows the detail card instead).
 - **Navigation.** `‹` / `›` step one month, crossing years while the year filter is *All years*;
   with a year selected they stop at that year's bounds and **Today** snaps back to the current
   month, clamped into the selected year (its latest month with data when today falls outside it).
-  The calendar-glyph picker beside them (`#dailyPickerBtn`) opens a small **Jump to month** dialog
-  (`#dailyPicker`: Year + Month selects, Go / Close). Its Year list comes from the loaded data
-  (plus *All years* while the toolbar year filter is *All years* — that asks for the latest year on
-  record holding the chosen month); with a year filter active the select pins to that year, and the
-  jump goes through the same clamp as `‹`/`›`, so the calendar can never leave the selected year.
-  Esc, backdrop and outside clicks close the picker, and focus returns to the opener.
+  The calendar-glyph picker leads the bar (`#dailyPickerBtn`, before `‹`/`›`) and opens a small
+  **Jump to month** dialog (`#dailyPicker`: Year + Month selects, Go / Close). Its Year list comes
+  from the loaded data (plus *All years* while the toolbar year filter is *All years* — that asks
+  for the latest year on record holding the chosen month); with a year filter active the select
+  pins to that year, and the jump goes through the same clamp as `‹`/`›`, so the calendar can
+  never leave the selected year. The dialog opens with focus on the dialog itself (never the Year
+  select: focusing a select pops the iOS wheel and can jump the page while the picker is just
+  opening), so **Tab** reaches Year, then Month; Esc, backdrop and outside clicks close the
+  picker, and focus returns to the opener.
   The calendar shows days even where the file has no rows yet, so navigating past the last month
   is a normal empty month, not an error. Months outside the shown one are dimmed.
 - **Empty.** Until a CSV is loaded the card keeps the placeholder and hides the weekday row.
@@ -266,7 +274,9 @@ mirror of Exclude, using the same case-insensitive root-symbol matching and pers
   modal, and **Close** / Esc / backdrop discards unapplied changes (state is the source of truth).
 - **Search.** The modal's filter box is a case-insensitive substring match over the rendered
   symbols; the count reads `shown / total` while a query is active, and the **×** button
-  (`#tickerSearchClear`) clears the query.
+  (`#tickerSearchClear`) clears the query. Opening the modal focuses the box only on fine
+  pointers — on touch it keeps the browser's default focus so no soft keyboard covers the list —
+  and the field computes at **16px on phones**, so iOS never zooms the page when it is focused.
 - **Chips.** Every included root appears as a pressed chip next to the button, labelled with its
   scope while scoped (`AMD (Options only)`); click a chip to drop that ticker from the allow-list.
   The cluster keeps a **fixed 320px width** — applying or clearing chips never reflows the
@@ -370,7 +380,7 @@ override, not a second stylesheet.
 
 | Path | Role |
 | --- | --- |
-| `index.html` | Markup contract: header, year select, month chips (drill-down card header), chart cards, tables, `#postedToggle`, `#tickerBtn` / `#includeMore` / `#tickerSearchClear` / `#tickerCount` / `#filterNote` / `#toTopTickers` / `#tickersToTop`, `#assetToggle` asset radios, `#fxInput` / `#fxReset` / `#fxBadge`, legend income popover `#incomeInfo` / `#incomeHelp`, `#clearBtn`, file input, CSV help `#csvHelpBtn` / `#heroCsvInfo` / `#csvHelpModal`, and the Daily P&L shell `#dailyTitle` / `#dailyPill` / `#dailyPrev` / `#dailyNext` / `#dailyPickerBtn` / `#dailyPicker` / `#dailyToday` / `#dailyGrid` / `#dailyDetail` (date + Day P&L pill + trades/income groups). |
+| `index.html` | Markup contract: header, year select, month chips (drill-down card header), chart cards, tables, `#postedToggle`, `#tickerBtn` / `#includeMore` / `#tickerSearchClear` / `#tickerCount` / `#filterNote` / `#toTopTickers` / `#tickersToTop`, `#assetToggle` asset radios, `#fxInput` / `#fxReset` / `#fxBadge`, legend income popover `#incomeInfo` / `#incomeHelp`, `#clearBtn`, file input, CSV help `#csvHelpBtn` / `#heroCsvInfo` / `#csvHelpModal`, and the Daily P&L shell `#dailyTitle` / `#dailyPill` / `#dailyPickerBtn` / `#dailyPicker` / `#dailyPrev` / `#dailyNext` / `#dailyToday` / `#dailyGrid` / `#dailyDetail` (date + Day P&L pill + trades/income groups + the mobile `#dailyDetailTop`). |
 | `styles.css` | All styling and design tokens (CSS custom properties in `:root`); no external assets. |
 | `app.js` | CSV parser (Flex + Activity Statement), month + day aggregation (`aggregateByMonth` / `aggregateByDay`, the latter also returning the per-day detail `rows`), root-symbol include/exclude filter with per-kind scopes, session-only asset filter, USD/AUD rate chain, rendering (charts, tables, the Monday-first Daily P&L calendar with its day detail and month/year picker). Exposes `window.IBKR` for debugging. |
 | `manifest.webmanifest` | PWA manifest (`start_url`/`scope`/`id` are `./` so the install works under the Pages sub-path). |
