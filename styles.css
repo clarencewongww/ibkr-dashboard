@@ -801,7 +801,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   .toolbar__inner { padding-right: 56px; }
   .toolbar__inner > .theme-cycle {
     position: absolute;
-    top: 8px;
+    top: 0;
     right: 12px;
     z-index: 1;
     margin-left: 0;
