@@ -44,23 +44,12 @@ understands this Activity-Statement layout (it keys off the `Trades` / cash sect
 
 ## 2. Run it
 
-### Option A — one-click launcher (kills the old server first)
+### Option A — deployed site (recommended for daily use)
 
-Double-click **`IBKR P&L Dashboard.app`**, or run `./Start-Dashboard.sh` from Terminal. The launcher
-kills whatever is listening on port 8000, starts `python3 -m http.server` bound to **127.0.0.1**,
-waits for `http://127.0.0.1:8000/index.html` to answer, then opens it. The server is detached, so
-nothing has to stay open after the page appears.
+Open **https://clarencewongww.github.io/ibkr-dashboard/** — a static, code-only copy of the app
+(§8). No install and no server on your machine; your CSV is still parsed locally in the tab.
 
-- **First launch only (Gatekeeper):** right-click `IBKR P&L Dashboard.app` → **Open** → **Open**. The
-  bundle is signed locally (ad-hoc), so plain double-click works from then on.
-- **Stop it manually:** `lsof -ti:8000 -sTCP:LISTEN | xargs kill`.
-
-### Option B — double-click (no server)
-
-Open `index.html` directly from Finder (works over `file://`) and pick your CSV(s) with **Choose File(s)**.
-All parsing is done with the browser's `FileReader`; no server, no upload.
-
-### Option C — local HTTP server (recommended for a stable origin)
+### Option B — local HTTP server
 
 ```bash
 python3 -m http.server 8000 --bind 127.0.0.1
@@ -69,6 +58,11 @@ python3 -m http.server 8000 --bind 127.0.0.1
 
 Bind to **127.0.0.1 only** — never `0.0.0.0`. Binding to all interfaces would expose your statement
 to anyone on the same network. There is nothing to install and no build step.
+
+### Option C — double-click (no server)
+
+Open `index.html` directly from Finder (works over `file://`) and pick your CSV(s) with **Choose File(s)**.
+All parsing is done with the browser's `FileReader`; no server, no upload.
 
 ### What the buckets mean
 
@@ -398,8 +392,6 @@ stylesheet.
 | `manifest.webmanifest` | PWA manifest (`start_url`/`scope`/`id` are `./` so the install works under the Pages sub-path). |
 | `sw.js` | Offline-shell service worker (`ibkr-shell-v3`): allowlisted shell files only, scope resolved from its own URL; never touches CSVs, `data/` or the FX lookups. |
 | `icons/` | PWA icons shipped with the app (`icon.svg`, 192/512, maskable-512, apple-touch-180) — tracked, unlike screengrabs. |
-| `Start-Dashboard.sh` | Kill-then-start launcher: frees port 8000, serves this folder on **127.0.0.1** and opens the page. |
-| `IBKR P&L Dashboard.app` | Double-click wrapper around `Start-Dashboard.sh`; no Terminal window (right-click **Open** on first launch only). |
 | `data/` | Your local IBKR exports and scratch space (gitignored). |
 | `.github/workflows/pages.yml` | GitHub Pages deploy on `main`, gated by the privacy `guard` job (no tracked CSV / data export / screengrab). |
 | `.gitignore` | Keeps `*.csv`, `data/*`, `screengrabs/`, `screenshots/` and env/log noise out of git. |
@@ -428,16 +420,18 @@ bucket only when an Interest Accruals section is present.
 
 ---
 
-## 7. Install as an app (PWA) & launcher modes
+## 7. Install as an app (PWA)
 
-The dashboard is a PWA. Served from the canonical origin **http://127.0.0.1:8000** (the launcher),
-Chromium browsers can install it as a chromeless app window. `file://` cannot install — service
-workers need http/https, so always install from the launcher's URL, not from a Finder double-click.
+PWA install applies to the deployed site **https://clarencewongww.github.io/ibkr-dashboard/** and to
+the loopback server **http://127.0.0.1:8000** when running it locally. Chromium browsers can install
+it as a chromeless app window — install once and every later launch goes straight to the app window.
+`file://` cannot install — service workers need http/https, so install from one of those origins,
+not from a Finder double-click.
 
 ### Install (Brave)
 
-1. Start the dashboard with **`IBKR P&L Dashboard.app`** (or `./Start-Dashboard.sh`) so the page is open
-   at `http://127.0.0.1:8000/index.html`.
+1. Open the dashboard at **https://clarencewongww.github.io/ibkr-dashboard/** — or run the local
+   server from §2 and open `http://127.0.0.1:8000/index.html`.
 2. Watch the toolbar: once the manifest + service worker qualify, Chromium fires its install prompt
    and the **Install app** button appears there (typically within ~30 seconds of the first load —
    if it is late, wait half a minute and click it again; each captured prompt is single-use).
@@ -448,20 +442,22 @@ workers need http/https, so always install from the launcher's URL, not from a F
 3. Manage or remove installed apps from **`brave://apps`**; their bundles also live under
    `~/Applications/Brave Browser Apps.localized/`.
 4. Launch it from Launchpad/Applications as usual — it opens standalone, without browser chrome, and
-   still opens when the local server is down (next section).
+   still opens offline (next section).
 
 > **Install button missing?** Chromium only offers the prompt while the page is not already
 > installed. Remove a stale install in **`brave://apps`**, then clear the site's cached data —
-> **`brave://settings/content/all`** → `127.0.0.1:8000` → delete (or DevTools → **Application →
+> **`brave://settings/content/all`** → the origin (`127.0.0.1:8000` or the Pages site) → delete (or
+> DevTools → **Application →
 > Storage → Clear site data**) — reload, and wait ~30 seconds: the service worker re-registers
 > (`ibkr-shell-v3`) and the button comes back. **iOS/Safari:** there is no install prompt at all —
 > use **Share → Add to Home Screen**.
 
 > **Already installed from an earlier build?** The PWA icons changed, but an existing install keeps
 > its cached copies. Remove the old **IBKR P&L** app in **`brave://apps`** (its bundle also sits under
-> `~/Applications/Brave Browser Apps.localized/`), then install it again from
-> `http://127.0.0.1:8000/index.html` so the new icons are picked up. If the old icon lingers in the
-> Dock, remove that Dock tile and re-add the freshly installed app — the Dock caches icons per bundle.
+> `~/Applications/Brave Browser Apps.localized/`), then install it again from the same origin
+> (`http://127.0.0.1:8000/index.html` or the Pages URL) so the new icons are picked up. If the old
+> icon lingers in the Dock, remove that Dock tile and re-add the freshly installed app — the Dock
+> caches icons per bundle.
 
 ### Offline behaviour (service worker)
 
@@ -472,20 +468,6 @@ down, the cached shell is served instead, so the installed app still opens and r
 data still comes from the in-page state / `localStorage` as before). **CSV files, `/data/*` and the
 cross-origin FX lookups are never intercepted and never cached** — statement data stays out of
 CacheStorage exactly as it stays out of the network, and old shell caches are purged on activate.
-
-### Launcher modes
-
-`Start-Dashboard.sh` / `IBKR P&L Dashboard.app` open the page in this order and log the mode they used
-(both to stdout and to the server log):
-
-| Mode | What opens |
-| --- | --- |
-| **Installed app window** | The first `*.app` under `~/Applications/Brave Browser Apps.localized/` whose `CrAppModeShortcutURL` starts with `http://127.0.0.1:8000` — i.e. the installed PWA. |
-| **Brave app window** | `Brave Browser --app=http://127.0.0.1:8000/index.html` on the default profile (chromeless), backgrounded by the launcher. |
-| **Brave via `open -a`** | `open -a "Brave Browser" --args --app=…` when the binary isn't at `/Applications` but LaunchServices knows the app. |
-| **Default browser** | Plain `open http://127.0.0.1:8000/index.html` when no Brave install is found. |
-
-Install the PWA once and every later launch goes straight to the app window.
 
 ---
 

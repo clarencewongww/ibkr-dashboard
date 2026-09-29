@@ -28,8 +28,8 @@ const SHELL = [
 
 const SHELL_URLS = SHELL.map((path) => new URL(path, self.location).href);
 const INDEX = new URL('index.html', self.location);
-/* Scope root: '/<repo>/' on GitHub Pages, '/' on the local launcher - both
-   resolve against this worker's own URL, so a sub-path deploy is offline-safe
+/* Scope root: '/<repo>/' on GitHub Pages, '/' when served from the project root -
+   both resolve against this worker's own URL, so a sub-path deploy is offline-safe
    when the scope URL itself ('.../ibkr-dashboard/') is reloaded. */
 const ROOT = new URL('./', self.location);
 const SHELL_PATHS = {};
