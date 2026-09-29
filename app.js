@@ -1901,12 +1901,17 @@ const IBKR = (function () {
    */
   function dayIncomeTag(bucket, incomeRows) {
     if (!bucket || !incomeRows || !incomeRows.length) return '';
-    const interest = Number(bucket.interest) !== 0;
-    const dividends = Number(bucket.dividends) !== 0;
+    // Decide from the rows themselves, not the net bucket: IBKR fee days often
+    // contain fee charges + refunds that net to zero, and those days must still
+    // read "Fees" rather than the generic "Income".
+    const has = (re) => incomeRows.some(r => re.test(`${r && r.label ? r.label : ''} ${r && r.desc ? r.desc : ''}`));
+    const interest = has(/interest/i);
+    const dividends = has(/dividend/i);
+    const fees = has(/fee/i);
     if (interest && dividends) return 'Interest + Div';
     if (interest) return 'Interest';
     if (dividends) return 'Dividend';
-    if (Number(bucket.fees) !== 0) return 'Fees';
+    if (fees) return 'Fees';
     return 'Income';
   }
 
