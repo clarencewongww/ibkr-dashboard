@@ -574,6 +574,10 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   /* every other direct child leaves the flow: no clipped/hidden controls are
      reachable while folded (the row is either folded or fully wrapped) */
   .toolbar.is-collapsed .toolbar__inner > :not(.toolbar__toggle) { display: none; }
+  /* the theme cycle rides the first wrapped row: order:-1 pulls it up without
+     touching the DOM (it stays last for desktop's right-end alignment) and the
+     auto margin parks it beside the Controls toggle at the row's right edge */
+  .toolbar__inner > .theme-cycle { order: -1; margin-left: auto; }
 }
 
 .toolbar .field__label { color: var(--muted); }
@@ -643,7 +647,9 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 #includeWrap .chips { margin-bottom: 0; }
 
 /* #filterNote — one-line summary of the active ticker filters (hidden while
-   empty). Long lists ellipsise; app.js mirrors the full string into title=. */
+   empty). Long lists ellipsise; app.js mirrors the full string into title=.
+   The note is a tap/Enter target: .is-open (app.js toggles it; aria-expanded
+   follows) wraps the full text in place instead of truncating it. */
 .filter-note {
   margin-top: 6px;
   max-width: 100%;
@@ -652,7 +658,25 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
 }
+
+.filter-note.is-open {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+/* trailing affordance: ▾ while truncated, ▴ while expanded. It rides the end
+   of the text, so a very long clipped note ellipsises the hint away with the
+   rest — the "…" still signals there is more. */
+.filter-note::after {
+  content: "\25BE";
+  margin-left: 4px;
+  opacity: .7;
+}
+
+.filter-note.is-open::after { content: "\25B4"; }
 
 /* Inline in .include-row (after the '+n' slot): the note rides the row's flex
    line, so it takes only the leftover width beside the fixed 320px cluster,
@@ -723,12 +747,46 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   outline-offset: 2px;
 }
 
-/* icon-only variant (#themeToggle): square pills holding one 16px sun/moon/monitor
-   SVG each — no text label, the radio's aria-label names the mode. Last child of
-   #toolbarInner with margin-left:auto, so it always sits at the row's right end. */
-.segmented--theme .segmented__pill { padding: 4px 9px; }
-.segmented--theme .icon { display: block; }
-.toolbar__inner > .segmented--theme { margin-left: auto; }
+/* Theme cycle (#themeCycle): one icon button that cycles system → light → dark.
+   All three 16px sun / moon / monitor SVGs ride in the DOM (.tc-icon) and CSS
+   shows exactly the one matching the button's data-mode, so app.js only flips
+   the attribute and the "Theme: …" label/title. Last child of #toolbarInner
+   with margin-left:auto, so it sits flush right on desktop; below 620px
+   order:-1 lifts it into the first wrapped row (still hidden while the toolbar
+   is folded away, like every other child). */
+.theme-cycle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  cursor: pointer;
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+}
+
+.theme-cycle:hover { background: var(--surface); border-color: var(--muted); }
+
+.theme-cycle .tc-icon {
+  display: none;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.theme-cycle[data-mode="light"] .tc-icon--sun,
+.theme-cycle[data-mode="dark"] .tc-icon--moon,
+.theme-cycle[data-mode="system"] .tc-icon--monitor { display: block; }
+
+.toolbar__inner > .theme-cycle { margin-left: auto; }
 
 /* ----------------------------------------------------------------- card --- */
 .card {

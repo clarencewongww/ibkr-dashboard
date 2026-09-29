@@ -156,7 +156,9 @@
              picker and the dialog hands focus back to it on close — and its
              title/aria-label are cleared whenever it hides. #filterNote is 11px,
              shrinks into the row's leftover width and ellipsises long lists,
-             mirroring the full string into title=; app.js renders the note
+             mirroring the full string into title=; it is a tap/Enter target
+             (role="button", aria-expanded) — .is-open (app.js) wraps the full text
+             in place instead of truncating it; app.js renders the note
              before measuring the '+n' count, so its width narrows the chips.
              .toolbar__inner (#toolbarInner) flex-wraps at every width (no
              scroller, no hidden-scrollbar trick); the band keeps its height.
@@ -222,15 +224,18 @@
                         both, for the selected currency)
              #fxDetail app.js fills it with the full source detail; .fx-detail is the
                         footer tooltip, hidden until #fxBadge is hovered or focused
-  Theme      #themeToggle  fieldset; radios name="themeToggle" value="light"|"dark"|"system"
-             ("system" checked in markup). Icon-only pills (sun / moon / monitor, inline
-             16px SVGs, aria-label on each input); last child of #toolbarInner (right end
-             of the row, still folded away below 620px with the rest). app.js listens for
-             "change" on the fieldset (radios bubble), persists the pick under
-             ibkr-theme-v1 and calls applyTheme(): [data-theme] on <html> switches the
-             styles.css dark-token block, the theme-color meta follows, and "system"
-             tracks matchMedia live. The inline boot script in <head> resolves the same
-             key before first paint (no flash) and stamps the same theme-color value.
+  Theme      #themeCycle  single icon button cycling system → light → dark ("system"
+             is the markup default). Holds all three 16px sun / moon / monitor SVGs
+             (.tc-icon) and app.js sets data-mode="light"|"dark"|"system" plus the
+             "Theme: …" aria-label/title; styles.css shows exactly the icon that
+             matches. Last child of #toolbarInner (margin-left:auto parks it at the
+             row's right end on desktop; below 620px order:-1 lifts it into the
+             first wrapped row) and folded away below 620px with the rest. app.js
+             persists the pick under ibkr-theme-v1 and calls applyTheme():
+             [data-theme] on <html> switches the styles.css dark-token block, the
+             theme-color meta follows, and "system" tracks matchMedia live. The
+             inline boot script in <head> resolves the same key before first paint
+             (no flash) and stamps the same theme-color value.
   Breakdown  #breakdownCard  card shell · #breakdownSvg — 720x300 viewBox, same contract
              as #chartSvg (app.js re-declares the viewBox and draws .chart primitives)
              #breakdownTip — same hidden/[hidden] contract as #chartTip
@@ -367,8 +372,11 @@
                 aria-haspopup="dialog" aria-controls="tickerModal"
                 data-open-tickers hidden></button>
         <!-- Inline in the row (after the '+n' slot) so the note shares the 320px
-             cluster's line; app.js renders it before measuring the clip. -->
-        <p id="filterNote" class="filter-note" aria-live="polite" hidden></p>
+             cluster's line; app.js renders it before measuring the clip. Tap or
+             Enter/Space toggles .is-open (role="button", aria-expanded follows) to
+             wrap the full list in place. -->
+        <p id="filterNote" class="filter-note" role="button" tabindex="0"
+           aria-expanded="false" aria-live="polite" hidden></p>
       </div>
     </div>
 
@@ -385,41 +393,30 @@
       Install app
     </button>
 
-    <!-- Theme switch: icon-only light / dark / system (default follows the OS), the last
-         child of the row so it sits at the toolbar's right end. app.js persists the pick
-         under ibkr-theme-v1 and applies it to <html data-theme>; the inline boot script
-         in <head> paints the stored pick before first paint. Still a
-         .toolbar__inner child, so the mobile Controls fold hides it like every sibling. -->
-    <fieldset id="themeToggle" class="segmented segmented--theme" aria-label="Theme">
-      <legend class="visually-hidden">Theme</legend>
-      <label class="segmented__opt" title="Light theme">
-        <input type="radio" name="themeToggle" id="themeToggleLight" value="light" aria-label="Light theme">
-        <span class="segmented__pill">
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <circle cx="12" cy="12" r="4"></circle>
-            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>
-          </svg>
-        </span>
-      </label>
-      <label class="segmented__opt" title="Dark theme">
-        <input type="radio" name="themeToggle" id="themeToggleDark" value="dark" aria-label="Dark theme">
-        <span class="segmented__pill">
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-          </svg>
-        </span>
-      </label>
-      <label class="segmented__opt" title="System theme">
-        <input type="radio" name="themeToggle" id="themeToggleSystem" value="system" checked aria-label="System theme">
-        <span class="segmented__pill">
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <rect x="2" y="3" width="20" height="14" rx="2"></rect>
-            <line x1="8" y1="21" x2="16" y2="21"></line>
-            <line x1="12" y1="17" x2="12" y2="21"></line>
-          </svg>
-        </span>
-      </label>
-    </fieldset>
+    <!-- Theme cycle: one icon button cycling system → light → dark (system follows the
+         OS, the markup default). All three 16px icons ride in the DOM and styles.css
+         shows exactly the one matching data-mode; app.js owns data-mode plus the
+         aria-label/title ("Theme: …"). Last child of the row, so margin-left:auto
+         parks it at the toolbar's right end on desktop — below 620px order:-1 lifts
+         it into the first wrapped row. app.js persists the pick under ibkr-theme-v1
+         and applies it to <html data-theme>; the inline boot script in <head> paints
+         the stored pick before first paint. Still a .toolbar__inner child, so the
+         mobile Controls fold hides it like every sibling. -->
+    <button id="themeCycle" class="theme-cycle" type="button"
+            aria-label="Theme: System" title="Theme: System" data-mode="system">
+      <svg class="tc-icon tc-icon--sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <circle cx="12" cy="12" r="4"></circle>
+        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>
+      </svg>
+      <svg class="tc-icon tc-icon--moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+      </svg>
+      <svg class="tc-icon tc-icon--monitor" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+        <line x1="8" y1="21" x2="16" y2="21"></line>
+        <line x1="12" y1="17" x2="12" y2="21"></line>
+      </svg>
+    </button>
 
   </div>
 </section>
