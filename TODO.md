@@ -1,49 +1,42 @@
 # TODO — IBKR Dashboard
 
-Working notes for future features. Nothing here is started yet.
+All four Daily P&L items from the previous batch are **done** — shipped in commit
+`feat: daily p&l detail picker monday` on `main`.
 
-## Daily P&L tab (next batch)
+## Daily P&L batch — done ✅
 
-Current state: `renderDaily()` in `app.js`, `#tabDaily` panel in `index.html`,
-calendar CSS in `styles.css`. Calendar is Sun-first, cells show day number,
-day P&L and a trade count; day-level cash income is already included in the
-daily totals (same aggregation as the monthly rows).
-
-### 1. Week starts Monday
-- Change the calendar grid to Mon-first (`M T W T F S S`).
-- Weekday header row and cell offset math must both shift by one
-  (currently `dow === index % 7` with Sunday = 0).
-
-### 2. Click a day → show that day's trades and individual profits
-- Clicking a cell (or pressing Enter on it) opens a day detail view —
-  panel below the calendar or a modal, whichever fits better.
-- List each instrument with its realised P&L for that day, e.g.
-  `AMZN options  +$120.40`, plus day total.
-- Reuse the existing drill-down row style (`#drillTable` patterns:
-  Symbol | Asset class | Trades | Net P&L) and the same include/exclude
-  filters as the calendar.
-
-### 3. Calendar icon → month/year picker
-- Add a calendar glyph next to the `‹ ›` controls that opens a small
-  picker (two selects: Year, Month) to jump directly to a month/year.
-- Must respect the global Year select clamping behaviour (year filter
-  limits the jumpable range when not "All years").
-- `Today` button stays as-is.
-
-### 4. Interest / dividends in the day detail
-- Interest and dividend income must be reflected in the daily P&L totals
-  (already the case) but must NOT be counted as trades
-  (trade count stays trade-only — already the case).
-- When a day is clicked, the detail view must also list income rows,
-  e.g. `USD Broker Interest Received  +$232.10`,
-  `AAPL Cash Dividend  +$1.61`, clearly separated from trades
-  (e.g. an "Income" group with no trade-count contribution).
-- Cash-only days should show the day detail with income rows and
-  no trade rows.
+- [x] **1. Week starts Monday.** The `#dailyGrid` calendar is Monday-first:
+      weekday row `M T W T F S S`, and the grid maths use the JS offset
+      `col = (getUTCDay() + 6) % 7` (Mon=1 → column 0, Sun=0 → column 6), so
+      every month's first cell is a Monday and the grid stays 4–6 rows / 42
+      cells max. Verified for all 36 months of 2025–2027 plus the browser DOM.
+- [x] **2. Day click → day detail.** Selecting a cell (click / Enter) opens
+      `#dailyDetail` below the calendar: header `Wed 14 Jan 2026` + day net
+      pill, a **Trades** group (Symbol · Asset class · Trades · Net P&L, one row
+      per symbol+asset with summed net/count, full name in each row's
+      `title`/`aria-label`) and an **Income** group (type · description · signed
+      amount). Rows come from `aggregateByDay().rows`, collected in the same
+      pass and with the same filters as the day buckets, so the day total ties
+      to the clicked cell; clicking the same day again toggles the detail off,
+      Enter/Esc and arrow-key focus behaviour are unchanged. Empty day →
+      *No activity this day.*; cash-only day → income rows plus the trades
+      group's *No trades this day.* line.
+- [x] **3. Calendar icon picker.** `#dailyPickerBtn` (calendar glyph, beside
+      `‹ ›`) opens the `#dailyPicker` dialog (Year + Month selects, Go / Close).
+      Year options come from the loaded data, plus *All years* while the global
+      year filter is *All years* (jumps to the latest year on record holding the
+      month); with a year filter active the select pins to it and the jump goes
+      through the same `clampDailyYm()` path as `‹`/`›`. Esc, backdrop and
+      outside clicks close it; focus returns to `#dailyPickerBtn`.
+- [x] **4. Income is not trades.** Trade counts on cells and in the detail stay
+      trade-only; cell totals and the day total include interest / dividends /
+      withholding / fees (and the accrual day-splits on the Accrual basis). A
+      cash-only day shows the amount with no trade count, and its detail lists
+      the income rows only.
 
 ## Resume notes
 - Branch `main`, static zero-build app: `index.html`, `styles.css`,
   `app.js`, `sw.js`. Data stays local (`data/*.csv`, gitignored).
-- Verify each change with `node --check app.js` plus a browser pass at
-  375 / 768 / 1440 in both themes, and confirm
-  daily sums still equal the Monthly summary rows.
+- Re-verify with `node --check app.js`, the node invariants (Monday-first
+  offsets, day sums == monthly rows for posted+accrual × include/exclude ×
+  asset × USD/AUD) and a browser pass at 375 / 768 / 1440 in both themes.

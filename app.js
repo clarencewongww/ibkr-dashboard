@@ -48,6 +48,8 @@ const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Se
 /* Full names for the Daily P&L calendar title / aria labels — same indexes as MONTH_NAMES. */
 const MONTH_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+/* Three-letter forms for the day-detail header / labels — same indexes as WEEKDAY_NAMES. */
+const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const CACHE_KEY = 'ibkr-v1';
 const CACHE_MAX_BYTES = 2 * 1024 * 1024; // bigger raw files are parsed but not cached
 const EXCLUDE_KEY = 'ibkr-exclude-v1';   // persisted root-symbol exclude list
@@ -407,6 +409,24 @@ const IBKR = (function () {
     return null;
   }
 
+  /** Human labels for the day-detail Income rows and the month drill-down cash rows. */
+  const CASH_LABELS = { interest: 'Interest', dividends: 'Dividends', withholding: 'Withholding', fees: 'Fees' };
+
+  /** "USD Broker Interest Received" — currency + description (title-cased type as fallback). */
+  function cashDesc(c) {
+    const row = c || {};
+    const cur = up(row.currency);
+    const text = row.description ? String(row.description) : (row.type ? titleCase(row.type) : 'Cash');
+    return (cur && cur !== 'BASE_SUMMARY' ? cur + ' ' : '') + text;
+  }
+
+  /** "Interest Accruals 2026-01-01 – 2026-01-31" (single day when the window is degenerate). */
+  function accrualDesc(a) {
+    const from = dayKey(a && a.from), to = dayKey(a && a.to);
+    if (!to || (from && to < from)) return 'Interest Accruals ' + (from || String((a && a.from) || ''));
+    return 'Interest Accruals ' + from + ' – ' + to;
+  }
+
   function emptyMonth() {
     return { options: 0, assign: 0, otherStock: 0, otherStockCount: 0, interest: 0, dividends: 0, withholding: 0, fees: 0, count: 0, wins: 0, flat: 0, total: 0 };
   }
@@ -525,15 +545,23 @@ const IBKR = (function () {
    * Day-grain sibling of aggregateByMonth(): same trade filter, same cash categories and the
    * same accrual walk, but every amount lands on its 'yyyy-MM-dd' bucket. Day buckets carry the
    * month bucket shape (so count/wins/categories stay inspectable) and total the identical mix.
-   * Returns { byDay, maxAbs, monthTotals }:
+   * Returns { byDay, maxAbs, monthTotals, rows }:
    *   byDay       — { 'yyyy-MM-dd': bucket }, buckets without a parseable day are dropped
    *   monthTotals — { 'yyyy-MM': sum of that month's day totals } (the calendar's pill maths)
    *   maxAbs      — largest |day total| across the whole file (renderDaily scales its heat
    *                 tint to the shown month's own max instead, so every month stays legible)
+   *   rows        — { 'yyyy-MM-dd': { trades: [{symbol, asset, net, count}], income: [{label,
+   *                 desc, amount}] } } — the day-detail itemisation, collected in the very same
+   *                 pass as the buckets (same predicate, same accrual split), so the day total
+   *                 always equals trades net + income net. Income rows never touch bucket.count:
+   *                 interest/dividends/withholding/fees and accrual splits are cash, not trades.
    */
   function aggregateByDay(trades, cash, options) {
     const byDay = {};
     const bucket = key => byDay[key] || (byDay[key] = emptyMonth());
+    const rows = {};
+    const dayRows = key => rows[key] || (rows[key] = { trades: [], income: [] });
+    const tradeRowIndex = new Map(); // day + '\u0000' + symbol + '|' + asset -> row object
     const opts = options || {};
     const useAccrual = opts.interestMode === 'accrual' && opts.accruals && opts.accruals.length > 0;
     const filter = prepareTradeFilter(opts);
@@ -550,6 +578,18 @@ const IBKR = (function () {
       b.count++;
       if (pnl > 0) b.wins++;
       else if (pnl === 0) b.flat++;
+      // Itemisation: one row per full symbol + asset-class label, mirroring the drill-down.
+      const asset = where === 'options' ? 'Options' : where === 'assign' ? 'Assignment' : 'Stock (other)';
+      const symbol = t.symbol || '—';
+      const rowKey = key + '\u0000' + symbol + '|' + asset;
+      let row = tradeRowIndex.get(rowKey);
+      if (!row) {
+        row = { symbol, asset, net: 0, count: 0 };
+        tradeRowIndex.set(rowKey, row);
+        dayRows(key).trades.push(row);
+      }
+      row.net += pnl;
+      row.count++;
     }
 
     for (const c of cash || []) {
@@ -558,7 +598,10 @@ const IBKR = (function () {
       const cat = cashCategory(c.type);
       if (!cat || (cat === 'interest' && useAccrual)) continue;
       const key = dayKey(c.date);
-      if (key) bucket(key)[cat] += Number(c.amount) || 0;
+      if (!key) continue;
+      const amount = Number(c.amount) || 0;
+      bucket(key)[cat] += amount;
+      if (amount !== 0) dayRows(key).income.push({ label: CASH_LABELS[cat], desc: cashDesc(c), amount });
     }
 
     if (useAccrual) {
@@ -566,7 +609,11 @@ const IBKR = (function () {
         const from = ymd(a.from), to = ymd(a.to);
         const amount = Number(a.amount) || 0;
         if (!from || !amount) continue;
-        const spread = (key, value) => { if (key) bucket(key).interest += value; };
+        const spread = (key, value) => {
+          if (!key) return;
+          bucket(key).interest += value;
+          if (value !== 0) dayRows(key).income.push({ label: CASH_LABELS.interest, desc: accrualDesc(a), amount: value });
+        };
         if (!to || to < from) { spread(dayKey(a.from), amount); continue; }
         const days = Math.round((to - from) / 86400000) + 1;
         const perDay = amount / days;
@@ -586,7 +633,7 @@ const IBKR = (function () {
       const abs = Math.abs(b.total);
       if (abs > maxAbs) maxAbs = abs;
     }
-    return { byDay, maxAbs, monthTotals };
+    return { byDay, maxAbs, monthTotals, rows };
   }
 
   // ------------------------------------------------------------- UI state
@@ -1607,7 +1654,7 @@ const IBKR = (function () {
   }
 
   /**
-   * Daily P&L calendar (#dailyGrid): a Sun-first month grid of button.cal-cell rows —
+   * Daily P&L calendar (#dailyGrid): a Monday-first month grid of button.cal-cell rows —
    * day number · fmtMoney(day total) · "N trades", with a green/red heat tint scaled to
    * the shown month's largest |day total| (a file-wide max would flatten most months) and
    * painted on in-month days only. Month title + Monthly P&L pill come from the same day
@@ -1615,14 +1662,17 @@ const IBKR = (function () {
    * States: .cal-cell--dim (adjacent month), .cal-cell--today (teal ring on the day
    * number), .cal-cell--sel (selected, white ring). Keyboard: arrows move focus, Enter
    * clicks (selects/toggles), Escape clears the selection. Nav ‹ › walk whole months,
-   * bounded by the toolbar year filter (the shown ym is clamped into that year).
+   * bounded by the toolbar year filter (the shown ym is clamped into that year); the
+   * calendar-glyph picker (#dailyPickerBtn) jumps straight to a month. A selected day
+   * also renders its detail panel below the grid (#dailyDetail).
    * Every lookup is null-safe: shells without the card skip it entirely.
    */
   function renderDaily(months) {
     const grid = byId('dailyGrid');
     const title = byId('dailyTitle');
     const pill = byId('dailyPill');
-    if (!grid && !title && !pill) return;
+    const detail = byId('dailyDetail');
+    if (!grid && !title && !pill && !detail) return;
 
     const useAccrual = interestMode() === 'accrual' && state.accruals.length > 0;
     const agg = aggregateByDay(state.trades, state.cash, {
@@ -1644,19 +1694,23 @@ const IBKR = (function () {
       state.daily.ym = yearMonths[yearMonths.length - 1]; // jump to the year's latest month
       state.daily.sel = null;                            // the old selection lives in another year
     }
+    // A selection outside the active year goes the same way as the ym clamp above.
+    if (yearActive && state.daily.sel && state.daily.sel.slice(0, 4) !== state.year) state.daily.sel = null;
 
     if (!available.length) { // no rows at all: the shell's :has placeholder covers the grid
       if (title) title.textContent = 'Daily P&L';
       if (pill) { pill.textContent = '—'; pill.className = 'num'; pill.removeAttribute('title'); }
       if (grid) grid.innerHTML = '';
+      renderDailyDetail(agg);
       return;
     }
 
     const ym = state.daily.ym;
     const first = Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7) - 1, 1);
-    const firstDow = new Date(first).getUTCDay(); // 0 = Sunday
-    const weeks = Math.ceil((firstDow + daysInMonth(ym)) / 7); // 4..6 rows, 42 cells max
-    const start = first - firstDow * 86400000;
+    // Monday-first: JS dows are Sun=0..Sat=6, so Mon=1 -> column 0 and Sun=0 -> column 6.
+    const lead = (new Date(first).getUTCDay() + 6) % 7;
+    const weeks = Math.ceil((lead + daysInMonth(ym)) / 7); // 4..6 rows, 42 cells max
+    const start = first - lead * 86400000;
     const today = new Date().toISOString().slice(0, 10);
 
     if (title) title.textContent = fullMonthLabel(ym);
@@ -1672,7 +1726,7 @@ const IBKR = (function () {
       pill.className = ('num ' + (monthTotal > 0 ? 'pos' : monthTotal < 0 ? 'neg' : '')).trim();
       pill.title = `${fullMonthLabel(ym)} net P&L: ${fmtMoney(monthTotal)} across ${monthTrades} trade${monthTrades === 1 ? '' : 's'}`;
     }
-    if (!grid) return;
+    if (!grid) { renderDailyDetail(agg); return; }
 
     const cells = [];
     for (let i = 0; i < weeks * 7; i++) {
@@ -1716,6 +1770,96 @@ const IBKR = (function () {
           `<span class="cal-pnl cal-pnl--short ${pnlCls}" aria-hidden="true">${short}</span>` : '') +
         (count ? `<span class="cal-meta">${tradeText}</span>` : '') +
         `</button>`;
+    }).join('');
+    renderDailyDetail(agg);
+  }
+
+  /** "Wed 14 Jan 2026" — the day-detail header for a 'yyyy-MM-dd' key. */
+  function dayLabel(key) {
+    const stamp = ymd(key);
+    if (stamp == null) return String(key);
+    const dow = new Date(stamp).getUTCDay();
+    return `${WEEKDAY_SHORT[dow]} ${+String(key).slice(8, 10)} ${MONTH_NAMES[+String(key).slice(5, 7) - 1]} ${String(key).slice(0, 4)}`;
+  }
+
+  /**
+   * Day detail (#dailyDetail): the selected day's trades and cash income, itemised from
+   * aggregateByDay().rows — the same pass that built the calendar cells, so the day total
+   * here is exactly the cell's total. Trades group mirrors the drill-down columns
+   * (Symbol | Asset class | Trades | Net P&L); the Income group lists the day's cash rows
+   * (and accrual day-splits on the accrual basis) as type · description · signed amount.
+   * Income never contributes to the trade count. No selection (or no shell markup) keeps
+   * the panel hidden; a day with neither trades nor income shows its empty state.
+   */
+  function renderDailyDetail(agg) {
+    const panel = byId('dailyDetail');
+    if (!panel) return;
+    const sel = state.daily && state.daily.sel;
+    if (!sel || !/^\d{4}-\d{2}-\d{2}$/.test(sel)) { panel.hidden = true; return; }
+    const a = agg || {};
+    const dayRows = (a.rows && a.rows[sel]) || { trades: [], income: [] };
+    const trades = dayRows.trades.slice()
+      .sort((x, y) => Math.abs(y.net) - Math.abs(x.net) || (x.symbol < y.symbol ? -1 : x.symbol > y.symbol ? 1 : 0));
+    const income = dayRows.income.slice()
+      .sort((x, y) => Math.abs(y.amount) - Math.abs(x.amount) || (x.desc < y.desc ? -1 : x.desc > y.desc ? 1 : 0));
+    const bucket = a.byDay ? a.byDay[sel] : null;
+    const tradesNet = trades.reduce((t, r) => t + r.net, 0);
+    const incomeNet = income.reduce((t, r) => t + r.amount, 0);
+    // The bucket is the calendar's own number: showing it keeps cell and detail identical.
+    const total = bucket ? bucket.total : tradesNet + incomeNet;
+    const count = bucket ? bucket.count : trades.reduce((t, r) => t + r.count, 0);
+    const hasTrades = trades.length > 0, hasIncome = income.length > 0;
+    const moneyCls = v => v > 0 ? 'pos' : v < 0 ? 'neg' : '';
+
+    panel.hidden = false;
+    const dateEl = byId('dailyDetailDate');
+    if (dateEl) dateEl.textContent = dayLabel(sel);
+    const pill = byId('dailyDetailPill');
+    if (pill) {
+      pill.textContent = (total > 0 ? '+' : '') + fmtMoney(total);
+      pill.className = ('num ' + moneyCls(total)).trim();
+      pill.title = `${dayLabel(sel)} net P&L: ${fmtMoney(total)} (trades ${fmtMoney(tradesNet)} + income ${fmtMoney(incomeNet)})` +
+        (count ? ` · ${count} trade${count === 1 ? '' : 's'}` : '');
+    }
+
+    // Empty day: one message, both groups retired. Cash-only day: the trades group stays
+    // with its own empty line next to the income rows (and vice versa).
+    const emptyAll = byId('dailyDetailEmpty');
+    const tradesGroup = byId('dailyTradesGroup');
+    const incomeGroup = byId('dailyIncomeGroup');
+    const none = !hasTrades && !hasIncome;
+    if (emptyAll) emptyAll.hidden = !none;
+    if (tradesGroup) tradesGroup.hidden = none;
+    if (incomeGroup) incomeGroup.hidden = none;
+
+    const tradesSum = byId('dailyTradesSum');
+    if (tradesSum) { tradesSum.textContent = fmtMoney(tradesNet); tradesSum.className = ('cal-detail__sum num ' + moneyCls(tradesNet)).trim(); }
+    const incomeSum = byId('dailyIncomeSum');
+    if (incomeSum) { incomeSum.textContent = fmtMoney(incomeNet); incomeSum.className = ('cal-detail__sum num ' + moneyCls(incomeNet)).trim(); }
+
+    const tradesTable = byId('dailyTradesTable');
+    if (tradesTable) tradesTable.hidden = !hasTrades;
+    const tradesEmpty = byId('dailyTradesEmpty');
+    if (tradesEmpty) tradesEmpty.hidden = hasTrades;
+    const tradesBody = byId('dailyTradesBody');
+    if (tradesBody) tradesBody.innerHTML = trades.map(r => {
+      const info = `${r.symbol} · ${r.asset} · ${r.count} trade${r.count === 1 ? '' : 's'} · ${fmtMoney(r.net)}`;
+      return `<tr title="${esc(info)}" aria-label="${esc(info)}">` +
+        `<td>${esc(r.symbol)}</td><td>${esc(r.asset)}</td>` +
+        `<td class="num">${r.count}</td><td class="num ${moneyCls(r.net)}">${fmtMoney(r.net)}</td></tr>`;
+    }).join('');
+
+    const incomeTable = byId('dailyIncomeTable');
+    if (incomeTable) incomeTable.hidden = !hasIncome;
+    const incomeEmpty = byId('dailyIncomeEmpty');
+    if (incomeEmpty) incomeEmpty.hidden = hasIncome;
+    const incomeBody = byId('dailyIncomeBody');
+    if (incomeBody) incomeBody.innerHTML = income.map(r => {
+      const money = (r.amount > 0 ? '+' : '') + fmtMoney(r.amount);
+      const info = `${r.label} · ${r.desc} · ${money}`;
+      return `<tr title="${esc(info)}" aria-label="${esc(info)}">` +
+        `<td>${esc(r.label)}</td><td>${esc(r.desc)}</td>` +
+        `<td class="num ${moneyCls(r.amount)}">${money}</td></tr>`;
     }).join('');
   }
 
@@ -1767,7 +1911,7 @@ const IBKR = (function () {
       const where = classify(t);
       add(t.symbol || '—', where === 'options' ? 'Options' : where === 'assign' ? 'Assignment' : 'Stock (other)', Number(t.pnl) || 0);
     }
-    const CAT = { interest: 'Interest', dividends: 'Dividends', withholding: 'Withholding', fees: 'Fees' };
+    const CAT = CASH_LABELS;
     for (const c of state.cash) {
       if (monthKey(c.date) !== key) continue;
       const cat = cashCategory(c.type);
@@ -2471,6 +2615,12 @@ const IBKR = (function () {
     if (key === 'Escape') {
       if (tickerFallbackOpen()) closeTickerList();
       if (csvHelpFallbackOpen()) closeCsvHelp();
+      if (dailyPickerFallbackOpen()) closeDailyPicker();
+      // A native #dailyPicker handles its own Esc: close it here too (focus return is
+      // ours — not every engine fires the dialog close event), and stop, so dismissing
+      // the picker never also clears the day selection behind it.
+      const picker = byId('dailyPicker');
+      if (picker && picker.open) { closeDailyPicker(); return; }
       // Esc also clears the Daily tab's cell selection (the grid handler refocuses the cell;
       // this covers the case where focus has already left the grid, e.g. after a mouse click)
       if (state.daily.sel) { state.daily.sel = null; renderDaily(state.months); }
@@ -2479,6 +2629,7 @@ const IBKR = (function () {
     if (key !== 'Tab') return;
     if (tickerFallbackOpen()) trapFallbackTab(pickById(TICKER_IDS.dialog), e);
     else if (csvHelpFallbackOpen()) trapFallbackTab(byId('csvHelpModal'), e);
+    else if (dailyPickerFallbackOpen()) trapFallbackTab(byId('dailyPicker'), e);
   }
 
   /** Tab key for a button/panel: data-tab, aria-controls="tabX" or id="tabBtnX"/"tabX". */
@@ -2580,9 +2731,12 @@ const IBKR = (function () {
     // dismissal below never sees the opening click as an outside click. Both the
     // toolbar "i" and the hero subtitle "i" open the same #csvHelpModal.
     if (target.closest('#csvHelpBtn, #heroCsvInfo')) { openCsvHelp(); return; }
+    // daily picker opener — same early-return contract as the help opener above
+    if (target.closest('#dailyPickerBtn')) { openDailyPicker(); return; }
     // fallback dialogs: a click anywhere outside an open one dismisses it
     if (tickerFallbackOpen() && !target.closest('.modal--fallback')) closeTickerList();
     if (csvHelpFallbackOpen() && !target.closest('.modal--fallback')) closeCsvHelp();
+    if (dailyPickerFallbackOpen() && !target.closest('.modal--fallback')) closeDailyPicker();
   }
 
   // ------------------------------------------------------------ listeners
@@ -2650,6 +2804,143 @@ const IBKR = (function () {
   function onDailyPrev() { dailyStep(-1); }
   function onDailyNext() { dailyStep(1); }
   function onDailyToday() { dailyGoTo(currentYm()); } // clampDailyYm handles the year filter
+
+  // ----------------------------------------- daily month/year picker (#dailyPicker)
+
+  let dailyPickerReturnFocus = null;
+
+  /** Every 'yyyy-MM' the loaded file has (state.months is the unfiltered aggregate). */
+  function dailyMonthKeys() { return Object.keys(state.months || {}).filter(k => /^\d{4}-\d{2}$/.test(k)).sort(); }
+
+  /** Years present in the data, ascending. */
+  function dailyYears() { return Array.from(new Set(dailyMonthKeys().map(k => k.slice(0, 4)))); }
+
+  /**
+   * Fill the picker's selects from the loaded data, preselecting the shown month.
+   * Year options are clamped to the global year filter while one is active (the
+   * select pins to it and is disabled, so a jump can never ask for another year);
+   * with *All years* the list also carries an "All years" entry — that jumps to the
+   * latest year on record holding the chosen month.
+   */
+  function renderDailyPicker() {
+    const yearSel = byId('dailyPickerYear');
+    const monthSel = byId('dailyPickerMonth');
+    const shown = state.daily.ym && /^\d{4}-\d{2}$/.test(state.daily.ym) ? state.daily.ym : currentYm();
+    const years = dailyYears();
+    const yearActive = !!state.year && state.year !== 'all';
+    if (yearSel) {
+      const list = yearActive ? [state.year] : years;
+      yearSel.innerHTML = (yearActive ? '' : '<option value="all">All years</option>') +
+        list.map(y => `<option value="${esc(y)}">${esc(y)}</option>`).join('');
+      yearSel.value = yearActive ? state.year
+        : list.indexOf(shown.slice(0, 4)) >= 0 ? shown.slice(0, 4)
+          : list.length ? list[list.length - 1] : 'all';
+      yearSel.disabled = yearActive; // pinned by the global filter — the clamp is the contract
+    }
+    if (monthSel) {
+      monthSel.innerHTML = MONTH_NAMES
+        .map((m, i) => `<option value="${String(i + 1).padStart(2, '0')}">${m}</option>`).join('');
+      monthSel.value = shown.slice(5, 7);
+    }
+  }
+
+  /**
+   * Picker year + month -> 'yyyy-MM'. 'all' means "the latest year on record that has
+   * this month" (falling back to the latest year, then the current one).
+   */
+  function pickerYm(yearValue, month) {
+    let year = yearValue;
+    if (year === 'all') {
+      const keys = dailyMonthKeys();
+      const withMonth = keys.filter(k => k.slice(5, 7) === month).map(k => k.slice(0, 4));
+      year = withMonth.length ? withMonth[withMonth.length - 1]
+        : keys.length ? keys[keys.length - 1].slice(0, 4)
+          : currentYm().slice(0, 4);
+    }
+    return year + '-' + month;
+  }
+
+  /** Open the picker: refresh the selects, show the dialog, focus the first enabled control. */
+  function openDailyPicker() {
+    const dialog = byId('dailyPicker');
+    if (!dialog) return;
+    renderDailyPicker();
+    if (typeof document !== 'undefined' && document.activeElement) dailyPickerReturnFocus = document.activeElement;
+    if (typeof dialog.showModal === 'function') {
+      if (!dialog.open) dialog.showModal();
+    } else {
+      // engines without showModal: the open attribute + .modal--fallback CSS stand in
+      dialog.setAttribute('open', '');
+      dialog.classList.add('modal--fallback');
+      if (typeof document !== 'undefined' && document.body) document.body.classList.add('modal-fallback-open');
+    }
+    const yearSel = byId('dailyPickerYear');
+    const monthSel = byId('dailyPickerMonth');
+    const first = yearSel && !yearSel.disabled ? yearSel : monthSel;
+    if (first && typeof first.focus === 'function') first.focus();
+  }
+
+  /** True while #dailyPicker is open through the open-attribute fallback. */
+  function dailyPickerFallbackOpen() {
+    const dialog = byId('dailyPicker');
+    return !!(dialog && typeof dialog.showModal !== 'function' && dialog.hasAttribute('open'));
+  }
+
+  /**
+   * Close the picker. The native path calls the UA close() and still restores focus
+   * itself, deferred by a task: some engines swallow the dialog close event entirely
+   * (and the UA's own restoration lands on <body> when the pre-modal element was
+   * re-rendered away), so the opener focus can't depend on the event alone. The
+   * fallback path unwinds the open attribute by hand.
+   */
+  function closeDailyPicker() {
+    const dialog = byId('dailyPicker');
+    const native = !!dialog && typeof dialog.showModal === 'function' && typeof dialog.close === 'function';
+    if (native && dialog.open) { dialog.close(); restoreDailyPickerFocus(); return; }
+    if (dialog) {
+      dialog.removeAttribute('open');
+      dialog.classList.remove('modal--fallback');
+      if (typeof document !== 'undefined' && document.body) document.body.classList.remove('modal-fallback-open');
+    }
+    restoreDailyPickerFocus(); // without a real <dialog> the close event never fires
+  }
+
+  /**
+   * Focus returns to #dailyPickerBtn (the dialog's only opener). Deferred by a
+   * task: the UA's own dialog-close focus restoration can land on <body> when
+   * the element that had focus before showModal() was re-rendered away (e.g. the
+   * calendar cell the jump replaced), so ours must run after it.
+   */
+  function restoreDailyPickerFocus() {
+    const target = byId('dailyPickerBtn') || dailyPickerReturnFocus;
+    dailyPickerReturnFocus = null;
+    if (!target || typeof target.focus !== 'function') return;
+    const focusIt = () => {
+      try { target.focus(); } catch (err) { /* element detached */ }
+    };
+    if (typeof setTimeout === 'function') setTimeout(focusIt, 0);
+    else focusIt();
+  }
+  function onDailyPickerClose() { restoreDailyPickerFocus(); }
+  /** <dialog closedby="any"> handles Esc/backdrop natively — keep a fallback for older shells. */
+  function onDailyPickerClick(e) {
+    const dialog = e.currentTarget;
+    if (!dialog || e.target !== dialog || typeof dialog.close !== 'function' || !dialog.getBoundingClientRect) return;
+    const r = dialog.getBoundingClientRect();
+    if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) return;
+    dialog.close(); // click landed on ::backdrop
+  }
+  /** Go: jump to the picked year+month (dailyGoTo clamps, clears the selection, re-renders). */
+  function onDailyPickerGo() {
+    const yearSel = byId('dailyPickerYear');
+    const monthSel = byId('dailyPickerMonth');
+    const shown = state.daily.ym && /^\d{4}-\d{2}$/.test(state.daily.ym) ? state.daily.ym : currentYm();
+    const month = monthSel && monthSel.value ? monthSel.value : shown.slice(5, 7);
+    const year = yearSel && yearSel.value ? yearSel.value : shown.slice(0, 4);
+    dailyGoTo(pickerYm(year, month));
+    closeDailyPicker();
+  }
+
   /** Cell click / Enter: toggle the white selection ring (Escape clears it). */
   function onDailyCellClick(e) {
     const btn = e.target && e.target.closest ? e.target.closest('#dailyGrid .cal-cell[data-day]') : null;
@@ -2922,6 +3213,15 @@ const IBKR = (function () {
     listen(byId('dailyPrev'), 'click', onDailyPrev);
     listen(byId('dailyNext'), 'click', onDailyNext);
     listen(byId('dailyToday'), 'click', onDailyToday);
+    // month/year picker: the opener is delegated in onDocumentClick (next to the ticker
+    // and help openers); the dialog's own controls are bound here
+    listen(byId('dailyPickerGo'), 'click', onDailyPickerGo);
+    listen(byId('dailyPickerClose'), 'click', closeDailyPicker);
+    const dailyPicker = byId('dailyPicker');
+    if (dailyPicker) {
+      listen(dailyPicker, 'close', onDailyPickerClose);
+      listen(dailyPicker, 'click', onDailyPickerClick);
+    }
     listen(byId('dailyGrid'), 'click', onDailyCellClick);
     listen(byId('dailyGrid'), 'keydown', onDailyGridKeydown);
     // interest rows carry data-month too: the same click selects the month
@@ -3021,7 +3321,8 @@ const IBKR = (function () {
   return {
     parseCsv, detectFormat, parseFlex, parseActivityStatement, parseCsvText,
     aggregateByMonth, classify, cashCategory, isAssignmentCode, monthKey, monthLabel, rootOf,
-    dayKey, aggregateByDay, renderDaily,
+    dayKey, aggregateByDay, renderDaily, renderDailyDetail, dayLabel,
+    pickerYm, openDailyPicker,
     tradePasses, prepareTradeFilter, normalizeScope, scopeLabel,
     fmtMoney, fmtCompact, disp, currencyMode, init, loadText, clearAll, renderAll, renderBreakdown, incomeOf, incomeTipText, state,
     getExclude, setExclude, getInclude, setInclude,

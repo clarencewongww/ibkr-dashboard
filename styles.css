@@ -960,7 +960,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 /* --------------------------------------------------- daily P&L calendar --- */
 /* Daily tab card: month title + Monthly P&L pill in the head, a compact
-   ‹ › Today bar, then the Sun-first 7-column calendar. app.js renders every cell
+   ‹ › Today bar, then the Monday-first 7-column calendar. app.js renders every cell
    (the heat tint rides on an inline background so its alpha can scale to the
    day's |P&L|); styles.css owns the shell and the state rings. */
 .cal-card { min-width: 0; }
@@ -1099,6 +1099,54 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   white-space: nowrap;
   color: var(--muted);
   font-size: 11px;
+}
+
+/* calendar-glyph picker beside ‹ ›: icon-only, same chrome as the nav buttons */
+.cal-nav--picker { display: inline-flex; align-items: center; justify-content: center; }
+.cal-nav--picker .icon { width: 15px; height: 15px; }
+
+/* ------------------------------------------------------- daily day detail --- */
+/* #dailyDetail: the selected day's trades + income, rendered by app.js from the
+   same aggregateByDay() pass as the cells. Hidden attribute until a day is picked. */
+.cal-detail { min-width: 0; }
+.cal-detail__date { font-size: 19px; }
+
+.cal-detail__heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.cal-detail__sum {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.cal-detail__sum.pos { color: var(--green); }
+.cal-detail__sum.neg { color: var(--red); }
+
+.cal-detail__group + .cal-detail__group { margin-top: 18px; }
+.cal-detail__group[hidden] + .cal-detail__group { margin-top: 0; }
+
+/* detail tables are denser than the page tables; the description column wraps */
+.cal-detail .table th,
+.cal-detail .table td { padding: 8px 10px; }
+.cal-detail__table--income th:nth-child(2),
+.cal-detail__table--income td:nth-child(2) { text-align: left; white-space: normal; min-width: 140px; }
+
+.cal-detail__placeholder {
+  padding: 4px 2px 2px;
+  font-size: 13px;
+  color: var(--muted);
 }
 
 /* empty state: hide the unused weekday row, let .table-placeholder show */
@@ -1694,6 +1742,17 @@ body.modal-fallback-open::before {
 
 /* CSV export help (#csvHelpModal) — numbered steps + note paragraphs */
 .modal--help { width: min(540px, calc(100vw - 32px)); }
+
+/* Daily month/year picker (#dailyPicker) — two stacked fields, compact dialog */
+.modal--sm { width: min(340px, calc(100vw - 32px)); }
+
+.picker-fields {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.picker-fields .select { width: 100%; }
 
 .help-steps {
   display: grid;

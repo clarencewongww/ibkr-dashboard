@@ -89,9 +89,25 @@
                         pos/neg class; the card head pill wraps it
              #dailyPrev / #dailyNext — ±1 month (crosses years); #dailyToday — jump
                         back to the current month; all real buttons, app.js wired
-             #dailyGrid — role=grid calendar: app.js renders 7-column, Sun-first
+             #dailyPickerBtn — calendar-glyph button beside ‹ › (aria-haspopup="dialog",
+                        aria-controls="dailyPicker"): opens the #dailyPicker <dialog>
+                        (Year + Month selects, Go / Close — same native showModal /
+                        open-attribute contract as the other dialogs; Esc, backdrop and
+                        outside-click close it and focus returns to the opener). The
+                        jump respects the toolbar year clamp: the Year select pins to
+                        the selected year, and renderDaily()'s clamp is reused.
+             #dailyGrid — role=grid calendar: app.js renders 7-column, Monday-first
                         button.cal-cell[data-day] cells (day number · P&L · "N trades",
-                        heat tint by |P&L|; .cal-cell--dim / --today / --sel states)
+                        heat tint by |P&L|; .cal-cell--dim / --today / --sel states).
+                        The `.cal-head` weekday row below is M T W T F S S to match.
+             #dailyDetail — hidden until a day is selected; app.js fills the date
+                        (#dailyDetailDate, "Wed 14 Jan 2026"), the Day P&L pill
+                        (#dailyDetailPill) and the two groups: #dailyTradesGroup
+                        (Symbol | Asset class | Trades | Net P&L, same filters as the
+                        calendar) and #dailyIncomeGroup (Type | Description | Amount,
+                        cash rows only — never counted as trades). A day with no rows
+                        shows #dailyDetailEmpty ("No activity this day."); a cash-only
+                        day keeps the trades group with its "No trades this day." line.
              the card's .table-placeholder shows while #dailyGrid is empty (:has CSS)
   Tickers    #tickerBtn — opens #tickerModal; its label text is app.js-owned ("Tickers (n)")
              #tickerModal <dialog> · #assetToggle fieldset (radios name="assetToggle",
@@ -746,14 +762,65 @@
         </span>
         <button id="dailyPrev" class="cal-nav" type="button" aria-label="Previous month">‹</button>
         <button id="dailyNext" class="cal-nav" type="button" aria-label="Next month">›</button>
+        <button id="dailyPickerBtn" class="cal-nav cal-nav--picker" type="button"
+                aria-label="Jump to month and year" title="Jump to month and year"
+                aria-haspopup="dialog" aria-controls="dailyPicker">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <rect width="18" height="18" x="3" y="4" rx="2"></rect>
+            <path d="M3 10h18"></path>
+            <path d="M8 2v4"></path>
+            <path d="M16 2v4"></path>
+          </svg>
+        </button>
         <button id="dailyToday" class="cal-today" type="button">Today</button>
       </div>
 
       <div class="cal-head" aria-hidden="true">
-        <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+        <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
       </div>
       <div id="dailyGrid" class="cal-grid" role="grid" aria-label="Daily P&amp;L calendar"></div>
       <p class="table-placeholder">Load a CSV to see the daily calendar.</p>
+    </section>
+
+    <!-- Day detail: hidden until a calendar day is selected (app.js toggles [hidden] and
+         fills every part from aggregateByDay().rows — the same pass that built the cell,
+         so the day pill equals the clicked cell's total). The Trades group mirrors the
+         drill-down columns; Income lists the day's cash rows (interest, dividends,
+         withholding, fees and accrual day-splits) and never counts as trades. -->
+    <section class="card cal-detail" id="dailyDetail" hidden aria-labelledby="dailyDetailDate">
+      <div class="card__head">
+        <div class="card__head-copy">
+          <h3 class="card__title cal-title cal-detail__date" id="dailyDetailDate">Day</h3>
+        </div>
+        <div class="card__head-actions">
+          <span class="cal-pill">Day P&amp;L: <strong id="dailyDetailPill" class="num">—</strong></span>
+        </div>
+      </div>
+      <p class="cal-detail__placeholder" id="dailyDetailEmpty" hidden>No activity this day.</p>
+      <div class="cal-detail__group" id="dailyTradesGroup">
+        <h4 class="cal-detail__heading">Trades <span class="cal-detail__sum num" id="dailyTradesSum">—</span></h4>
+        <div class="table-scroll">
+          <table class="table table--drill" id="dailyTradesTable">
+            <thead>
+              <tr><th>Symbol</th><th>Asset class</th><th>Trades</th><th>Net P&amp;L</th></tr>
+            </thead>
+            <tbody id="dailyTradesBody"></tbody>
+          </table>
+        </div>
+        <p class="cal-detail__placeholder" id="dailyTradesEmpty" hidden>No trades this day.</p>
+      </div>
+      <div class="cal-detail__group" id="dailyIncomeGroup">
+        <h4 class="cal-detail__heading">Income <span class="cal-detail__sum num" id="dailyIncomeSum">—</span></h4>
+        <div class="table-scroll">
+          <table class="table cal-detail__table--income" id="dailyIncomeTable">
+            <thead>
+              <tr><th>Type</th><th>Description</th><th>Amount</th></tr>
+            </thead>
+            <tbody id="dailyIncomeBody"></tbody>
+          </table>
+        </div>
+        <p class="cal-detail__placeholder" id="dailyIncomeEmpty" hidden>No income this day.</p>
+      </div>
     </section>
 
   </section>
@@ -902,6 +969,31 @@
   </p>
   <footer class="modal__actions">
     <button id="csvHelpClose" class="btn btn--outline" type="button">Close</button>
+  </footer>
+</dialog>
+
+<!-- Daily P&L month/year picker (opened by #dailyPickerBtn in the calendar bar).
+     Same native <dialog> contract as #tickerModal / #csvHelpModal: app.js calls
+     showModal()/close(), Esc + backdrop are native, the open-attribute fallback
+     covers engines without showModal, and closing hands focus back to the opener.
+     The Year select pins to the global year filter while one is active; "All
+     years" (only offered when the filter is All years) jumps to the latest year
+     on record holding the chosen month. -->
+<dialog id="dailyPicker" class="modal modal--sm" aria-labelledby="dailyPickerTitle">
+  <h2 class="modal__title" id="dailyPickerTitle">Jump to month</h2>
+  <div class="picker-fields">
+    <label class="field">
+      <span class="field__label">Year</span>
+      <select id="dailyPickerYear" class="select"></select>
+    </label>
+    <label class="field">
+      <span class="field__label">Month</span>
+      <select id="dailyPickerMonth" class="select"></select>
+    </label>
+  </div>
+  <footer class="modal__actions">
+    <button id="dailyPickerGo" class="btn btn--primary" type="button">Go</button>
+    <button id="dailyPickerClose" class="btn btn--outline" type="button">Close</button>
   </footer>
 </dialog>
 

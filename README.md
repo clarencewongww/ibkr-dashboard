@@ -167,7 +167,9 @@ a bar chart and a per-month table:
 ### Daily P&L tab
 
 The third tab (deep-linkable as `#daily`) turns the same aggregation into a **daily calendar**:
-one cell per day, Sun-first, with the month's net P&L in the head. The day grain is a true sibling
+one cell per day, **Monday-first** (`M T W T F S S` — the weekday row and the grid maths share
+the same offset, so day 1 always lands in its real weekday column), with the month's net P&L in
+the head. The day grain is a true sibling
 of the month grain — the trade filter (include/exclude + per-kind scopes + the global asset
 radio), the cash categories, the **Posted / Accrual** walk and the USD/AUD conversion are the same
 code paths, so every row of days sums to the month row it belongs to.
@@ -187,13 +189,31 @@ code paths, so every row of days sums to the month row it belongs to.
   light and dark. Adjacent-month cells stay dimmed and are never tinted, so a neighbouring day's
   bigger total can't bleed into the shown month's scale. (`aggregateByDay()` also returns a
   file-wide `maxAbs` for callers that want one scale across months.)
-- **Today & selection.** Today's day number carries a teal ring; clicking (or **Enter** on) a cell
-  toggles the selected white/ink ring. **Escape** clears it. Arrow keys walk the grid (← → by a
-  day, ↑ ↓ by a week); every cell keeps a full `title`/`aria-label` (`Monday, January 5, 2026 ·
-  $391.00 · 2 trades`).
+- **Day detail.** Clicking (or **Enter** on) a cell selects it *and* opens the card below the
+  calendar (`#dailyDetail`, hidden until a day is picked). The head carries the date
+  (`Wed 14 Jan 2026`) and a `Day P&L` pill; the **Trades** group mirrors the drill-down columns
+  (Symbol · Asset class · Trades · Net P&L, one row per symbol+asset with summed net and count,
+  full symbol in each row's `title`/`aria-label`) and the **Income** group lists that day's cash
+  rows — interest, dividends, withholding, fees, and the accrual day-splits on the Accrual basis
+  — as type · description · signed amount. Both groups reuse the calendar's exact trade filter
+  and cash walk (`aggregateByDay().rows` is collected in the same pass as the day buckets), so
+  **day total = trades net + income net = the clicked cell's total**, and income never counts as
+  a trade: a cash-only day keeps its money and shows the trades group with *No trades this day.*,
+  a day with neither shows *No activity this day.*.
+- **Today & selection.** Today's day number carries a teal ring; clicking the same cell again
+  (or pressing **Enter** twice) toggles the selection and the detail off. **Escape** clears it.
+  Arrow keys walk the grid (← → by a day, ↑ ↓ by a week); every cell keeps a full
+  `title`/`aria-label` (`Monday, January 5, 2026 · $391.00 · 2 trades`), and focus returns to the
+  same cell after each re-render.
 - **Navigation.** `‹` / `›` step one month, crossing years while the year filter is *All years*;
   with a year selected they stop at that year's bounds and **Today** snaps back to the current
   month, clamped into the selected year (its latest month with data when today falls outside it).
+  The calendar-glyph picker beside them (`#dailyPickerBtn`) opens a small **Jump to month** dialog
+  (`#dailyPicker`: Year + Month selects, Go / Close). Its Year list comes from the loaded data
+  (plus *All years* while the toolbar year filter is *All years* — that asks for the latest year on
+  record holding the chosen month); with a year filter active the select pins to that year, and the
+  jump goes through the same clamp as `‹`/`›`, so the calendar can never leave the selected year.
+  Esc, backdrop and outside clicks close the picker, and focus returns to the opener.
   The calendar shows days even where the file has no rows yet, so navigating past the last month
   is a normal empty month, not an error. Months outside the shown one are dimmed.
 - **Empty.** Until a CSV is loaded the card keeps the placeholder and hides the weekday row.
@@ -350,9 +370,9 @@ override, not a second stylesheet.
 
 | Path | Role |
 | --- | --- |
-| `index.html` | Markup contract: header, year select, month chips (drill-down card header), chart cards, tables, `#postedToggle`, `#tickerBtn` / `#includeMore` / `#tickerSearchClear` / `#tickerCount` / `#filterNote` / `#toTopTickers` / `#tickersToTop`, `#assetToggle` asset radios, `#fxInput` / `#fxReset` / `#fxBadge`, legend income popover `#incomeInfo` / `#incomeHelp`, `#clearBtn`, file input, CSV help `#csvHelpBtn` / `#heroCsvInfo` / `#csvHelpModal`, and the Daily P&L calendar shell `#dailyTitle` / `#dailyPill` / `#dailyPrev` / `#dailyNext` / `#dailyToday` / `#dailyGrid`. |
+| `index.html` | Markup contract: header, year select, month chips (drill-down card header), chart cards, tables, `#postedToggle`, `#tickerBtn` / `#includeMore` / `#tickerSearchClear` / `#tickerCount` / `#filterNote` / `#toTopTickers` / `#tickersToTop`, `#assetToggle` asset radios, `#fxInput` / `#fxReset` / `#fxBadge`, legend income popover `#incomeInfo` / `#incomeHelp`, `#clearBtn`, file input, CSV help `#csvHelpBtn` / `#heroCsvInfo` / `#csvHelpModal`, and the Daily P&L shell `#dailyTitle` / `#dailyPill` / `#dailyPrev` / `#dailyNext` / `#dailyPickerBtn` / `#dailyPicker` / `#dailyToday` / `#dailyGrid` / `#dailyDetail` (date + Day P&L pill + trades/income groups). |
 | `styles.css` | All styling and design tokens (CSS custom properties in `:root`); no external assets. |
-| `app.js` | CSV parser (Flex + Activity Statement), month + day aggregation (`aggregateByMonth` / `aggregateByDay`), root-symbol include/exclude filter with per-kind scopes, session-only asset filter, USD/AUD rate chain, rendering (charts, tables, the Daily P&L calendar). Exposes `window.IBKR` for debugging. |
+| `app.js` | CSV parser (Flex + Activity Statement), month + day aggregation (`aggregateByMonth` / `aggregateByDay`, the latter also returning the per-day detail `rows`), root-symbol include/exclude filter with per-kind scopes, session-only asset filter, USD/AUD rate chain, rendering (charts, tables, the Monday-first Daily P&L calendar with its day detail and month/year picker). Exposes `window.IBKR` for debugging. |
 | `manifest.webmanifest` | PWA manifest (`start_url`/`scope`/`id` are `./` so the install works under the Pages sub-path). |
 | `sw.js` | Offline-shell service worker (`ibkr-shell-v3`): allowlisted shell files only, scope resolved from its own URL; never touches CSVs, `data/` or the FX lookups. |
 | `icons/` | PWA icons shipped with the app (`icon.svg`, 192/512, maskable-512, apple-touch-180) — tracked, unlike screengrabs. |
