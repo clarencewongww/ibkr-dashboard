@@ -45,6 +45,9 @@
  */
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/* Full names for the Daily P&L calendar title / aria labels — same indexes as MONTH_NAMES. */
+const MONTH_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const CACHE_KEY = 'ibkr-v1';
 const CACHE_MAX_BYTES = 2 * 1024 * 1024; // bigger raw files are parsed but not cached
 const EXCLUDE_KEY = 'ibkr-exclude-v1';   // persisted root-symbol exclude list
@@ -99,6 +102,15 @@ const IBKR = (function () {
   function monthKey(value) {
     const m = /^(\d{4})[-/.](\d{2})/.exec(String(value == null ? '' : value).trim());
     return m ? m[1] + '-' + m[2] : null;
+  }
+  /**
+   * dayKey('2026-01-05 09:30:00') -> '2026-01-05' (also accepts / and . separators).
+   * Mirrors monthKey's normalization: same leading-date regex, but the day part is
+   * required — a bare 'yyyy-MM' is unsupported and returns null.
+   */
+  function dayKey(value) {
+    const m = /^(\d{4})[-/.](\d{2})[-/.](\d{2})/.exec(String(value == null ? '' : value).trim());
+    return m ? m[1] + '-' + m[2] + '-' + m[3] : null;
   }
   function ymd(value) {
     const m = /^(\d{4})[-/.](\d{2})[-/.](\d{2})/.exec(String(value == null ? '' : value).trim());
@@ -482,10 +494,79 @@ const IBKR = (function () {
     return months;
   }
 
+  /**
+   * Day-grain sibling of aggregateByMonth(): same trade filter, same cash categories and the
+   * same accrual walk, but every amount lands on its 'yyyy-MM-dd' bucket. Day buckets carry the
+   * month bucket shape (so count/wins/categories stay inspectable) and total the identical mix.
+   * Returns { byDay, maxAbs, monthTotals }:
+   *   byDay       — { 'yyyy-MM-dd': bucket }, buckets without a parseable day are dropped
+   *   monthTotals — { 'yyyy-MM': sum of that month's day totals } (the calendar's pill maths)
+   *   maxAbs      — largest |day total| across the whole file (renderDaily scales its heat
+   *                 tint to the shown month's own max instead, so every month stays legible)
+   */
+  function aggregateByDay(trades, cash, options) {
+    const byDay = {};
+    const bucket = key => byDay[key] || (byDay[key] = emptyMonth());
+    const opts = options || {};
+    const useAccrual = opts.interestMode === 'accrual' && opts.accruals && opts.accruals.length > 0;
+    const filter = prepareTradeFilter(opts);
+
+    for (const t of trades || []) {
+      if (!tradePasses(t, filter)) continue;
+      const key = dayKey(t.date);
+      if (!key) continue;
+      const b = bucket(key);
+      const pnl = Number(t.pnl) || 0;
+      const where = classify(t);
+      if (where === 'otherStock') { b.assign += pnl; b.otherStock += pnl; b.otherStockCount++; }
+      else b[where] += pnl;
+      b.count++;
+      if (pnl > 0) b.wins++;
+      else if (pnl === 0) b.flat++;
+    }
+
+    for (const c of cash || []) {
+      const sym = rootOf(c && c.symbol); // cash rows are ticker-less: never filtered by scopes
+      if (sym && filter.exclude.has(sym)) continue;
+      const cat = cashCategory(c.type);
+      if (!cat || (cat === 'interest' && useAccrual)) continue;
+      const key = dayKey(c.date);
+      if (key) bucket(key)[cat] += Number(c.amount) || 0;
+    }
+
+    if (useAccrual) {
+      for (const a of opts.accruals) {
+        const from = ymd(a.from), to = ymd(a.to);
+        const amount = Number(a.amount) || 0;
+        if (!from || !amount) continue;
+        const spread = (key, value) => { if (key) bucket(key).interest += value; };
+        if (!to || to < from) { spread(dayKey(a.from), amount); continue; }
+        const days = Math.round((to - from) / 86400000) + 1;
+        const perDay = amount / days;
+        for (let i = 0; i < days; i++) {
+          spread(new Date(from + i * 86400000).toISOString().slice(0, 10), perDay);
+        }
+      }
+    }
+
+    const monthTotals = {};
+    let maxAbs = 0;
+    for (const key of Object.keys(byDay)) {
+      const b = byDay[key];
+      b.total = b.options + b.assign + b.interest + b.dividends + b.withholding + b.fees;
+      const month = key.slice(0, 7);
+      monthTotals[month] = (monthTotals[month] || 0) + b.total;
+      const abs = Math.abs(b.total);
+      if (abs > maxAbs) maxAbs = abs;
+    }
+    return { byDay, maxAbs, monthTotals };
+  }
+
   // ------------------------------------------------------------- UI state
 
   const state = {
     trades: [], cash: [], accruals: [], months: {}, year: 'all', month: 'all', name: '', format: '',
+    daily: { ym: null, sel: null }, // Daily P&L tab: shown 'yyyy-MM' + selected 'yyyy-MM-dd'
     exclude: [],                 // root symbols skipped during aggregation (persisted)
     include: [],                 // when non-empty, only these roots aggregate (persisted)
     excludeScope: {},            // { SYM: 'options'|'stock' } — skip only that leg kind (persisted)
@@ -1481,6 +1562,122 @@ const IBKR = (function () {
     svg.innerHTML = out;
   }
 
+  // ------------------------------------------------------------ daily P&L
+
+  /** 'yyyy-MM' — the UTC "today" month, matching the calendar's UTC grid maths. */
+  function currentYm() { return new Date().toISOString().slice(0, 7); }
+
+  /** Full month label for a 'yyyy-MM' key: "January 2026" (falls back to the key). */
+  function fullMonthLabel(key) {
+    const n = +String(key).slice(5, 7);
+    return MONTH_FULL[n - 1] ? MONTH_FULL[n - 1] + ' ' + String(key).slice(0, 4) : String(key);
+  }
+
+  /** Shift a 'yyyy-MM' key by whole months, crossing the year boundary. */
+  function shiftMonth(ym, delta) {
+    const d = new Date(Date.UTC(+String(ym).slice(0, 4), +String(ym).slice(5, 7) - 1 + (Number(delta) || 0), 1));
+    return d.toISOString().slice(0, 7);
+  }
+
+  /**
+   * Daily P&L calendar (#dailyGrid): a Sun-first month grid of button.cal-cell rows —
+   * day number · fmtMoney(day total) · "N trades", with a green/red heat tint scaled to
+   * the shown month's largest |day total| (a file-wide max would flatten most months).
+   * Month title + Monthly P&L pill come from the same day buckets, so the pill always
+   * equals the month row's total.
+   * States: .cal-cell--dim (adjacent month), .cal-cell--today (teal ring on the day
+   * number), .cal-cell--sel (selected, white ring). Keyboard: arrows move focus, Enter
+   * clicks (selects/toggles), Escape clears the selection. Nav ‹ › walk whole months.
+   * Every lookup is null-safe: shells without the card skip it entirely.
+   */
+  function renderDaily(months) {
+    const grid = byId('dailyGrid');
+    const title = byId('dailyTitle');
+    const pill = byId('dailyPill');
+    if (!grid && !title && !pill) return;
+
+    const useAccrual = interestMode() === 'accrual' && state.accruals.length > 0;
+    const agg = aggregateByDay(state.trades, state.cash, {
+      interestMode: useAccrual ? 'accrual' : 'posted', accruals: state.accruals,
+      include: state.include, exclude: state.exclude,
+      includeScope: state.includeScope, excludeScope: state.excludeScope,
+      globalAsset: state.asset
+    });
+
+    const available = (months && Object.keys(months).length ? Object.keys(months) : Object.keys(agg.monthTotals)).sort();
+    if (!state.daily.ym || !/^\d{4}-\d{2}$/.test(state.daily.ym)) {
+      state.daily.ym = available.length ? available[available.length - 1] : currentYm();
+    }
+
+    if (!available.length) { // no rows at all: the shell's :has placeholder covers the grid
+      if (title) title.textContent = 'Daily P&L';
+      if (pill) { pill.textContent = '—'; pill.className = 'num'; pill.removeAttribute('title'); }
+      if (grid) grid.innerHTML = '';
+      return;
+    }
+
+    const ym = state.daily.ym;
+    const first = Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7) - 1, 1);
+    const firstDow = new Date(first).getUTCDay(); // 0 = Sunday
+    const weeks = Math.ceil((firstDow + daysInMonth(ym)) / 7); // 4..6 rows, 42 cells max
+    const start = first - firstDow * 86400000;
+    const today = new Date().toISOString().slice(0, 10);
+
+    if (title) title.textContent = fullMonthLabel(ym);
+    const monthDays = Object.keys(agg.byDay).filter(k => k.slice(0, 7) === ym);
+    const monthTotal = monthDays.reduce((a, k) => a + agg.byDay[k].total, 0);
+    const monthTrades = monthDays.reduce((a, k) => a + agg.byDay[k].count, 0);
+    // Heat scale: the shown month's largest |day total|. aggregateByDay().maxAbs spans
+    // the whole file, and scaling by it flattens every month but the file's biggest one
+    // to invisible alphas — the mock tints per month.
+    const maxAbs = monthDays.reduce((a, k) => Math.max(a, Math.abs(agg.byDay[k].total)), 0);
+    if (pill) {
+      pill.textContent = (monthTotal > 0 ? '+' : '') + fmtMoney(monthTotal);
+      pill.className = ('num ' + (monthTotal > 0 ? 'pos' : monthTotal < 0 ? 'neg' : '')).trim();
+      pill.title = `${fullMonthLabel(ym)} net P&L: ${fmtMoney(monthTotal)} across ${monthTrades} trade${monthTrades === 1 ? '' : 's'}`;
+    }
+    if (!grid) return;
+
+    const cells = [];
+    for (let i = 0; i < weeks * 7; i++) {
+      const d = new Date(start + i * 86400000);
+      const key = d.toISOString().slice(0, 10);
+      cells.push({ key, day: d.getUTCDate(), dow: d.getUTCDay(), inMonth: key.slice(0, 7) === ym });
+    }
+    // Roving tabindex: the selected day, else today, else the 1st of the month.
+    const roving = state.daily.sel && cells.some(c => c.key === state.daily.sel) ? state.daily.sel
+      : cells.some(c => c.key === today) ? today
+        : (cells.find(c => c.inMonth) || cells[0]).key;
+    grid.innerHTML = cells.map(c => {
+      const b = agg.byDay[c.key];
+      const total = b ? b.total : 0;
+      const count = b ? b.count : 0;
+      const classes = ['cal-cell'];
+      if (!c.inMonth) classes.push('cal-cell--dim');
+      if (c.key === today) classes.push('cal-cell--today');
+      if (c.key === state.daily.sel) classes.push('cal-cell--sel');
+      let tint = '';
+      if (total !== 0 && maxAbs > 0) {
+        const alpha = Math.abs(total) / maxAbs * 0.28;
+        tint = ` style="background:rgba(${total > 0 ? '72,187,120' : '245,101,101'},${alpha.toFixed(3)})"`;
+      }
+      const money = fmtMoney(total);
+      const short = fmtCompact(total);
+      const tradeText = count === 1 ? '1 trade' : count + ' trades';
+      const label = `${WEEKDAY_NAMES[c.dow]}, ${MONTH_FULL[+c.key.slice(5, 7) - 1]} ${c.day}, ${c.key.slice(0, 4)} · ${money} · ${tradeText}`;
+      const pnlCls = total > 0 ? 'pos' : total < 0 ? 'neg' : '';
+      // Two money spans: the full fmtMoney value everywhere, swapped for fmtCompact on
+      // narrow screens (styles.css) where a "$1,739.94" string would ellipsise to "$…".
+      return `<button class="${classes.join(' ')}" type="button" role="gridcell" data-day="${c.key}"` +
+        ` tabindex="${c.key === roving ? '0' : '-1'}" aria-label="${esc(label)}" title="${esc(label)}"${tint}>` +
+        `<span class="cal-day">${c.day}</span>` +
+        (total !== 0 || count ? `<span class="cal-pnl cal-pnl--full ${pnlCls}">${money}</span>` +
+          `<span class="cal-pnl cal-pnl--short ${pnlCls}" aria-hidden="true">${short}</span>` : '') +
+        (count ? `<span class="cal-meta">${tradeText}</span>` : '') +
+        `</button>`;
+    }).join('');
+  }
+
   function renderTables(months) {
     // The summary always lists every visible month — the year filter only. state.month
     // is deliberately ignored here (the drill-down below is the month-filtered view),
@@ -1754,6 +1951,7 @@ const IBKR = (function () {
     renderBreakdown(months);
     renderInterest(months);
     renderTables(months);
+    renderDaily(months);
     renderFilterNote(); // first: the inline note's width is part of the row the '+n' clip measures
     renderIncludeChips();
     renderTickerCount();
@@ -1777,6 +1975,7 @@ const IBKR = (function () {
     state.name = name || '';
     state.year = 'all';
     state.month = 'all';
+    state.daily = { ym: null, sel: null };
     try {
       if (!bytes || bytes <= CACHE_MAX_BYTES) {
         localStorage.setItem(CACHE_KEY, JSON.stringify({ v: 1, name: state.name, savedAt: new Date().toISOString(), parsed }));
@@ -1884,6 +2083,7 @@ const IBKR = (function () {
   function clearAll() {
     state.trades = []; state.cash = []; state.accruals = []; state.months = {};
     state.year = 'all'; state.month = 'all'; state.name = ''; state.format = '';
+    state.daily = { ym: null, sel: null };
     state.exclude = [];
     state.include = [];
     state.excludeScope = {};
@@ -2230,6 +2430,9 @@ const IBKR = (function () {
     if (key === 'Escape') {
       if (tickerFallbackOpen()) closeTickerList();
       if (csvHelpFallbackOpen()) closeCsvHelp();
+      // Esc also clears the Daily tab's cell selection (the grid handler refocuses the cell;
+      // this covers the case where focus has already left the grid, e.g. after a mouse click)
+      if (state.daily.sel) { state.daily.sel = null; renderDaily(state.months); }
       return;
     }
     if (key !== 'Tab') return;
@@ -2379,6 +2582,53 @@ const IBKR = (function () {
     const key = row.getAttribute('data-month');
     if (/^\d{4}-\d{2}$/.test(key)) { state.year = key.slice(0, 4); state.month = key.slice(5, 7); }
     renderAll();
+  }
+  /** Daily tab navigation: swap the shown month (or snap to today's) and re-render just the calendar. */
+  function dailyGoTo(ym) {
+    state.daily.ym = ym;
+    state.daily.sel = null;
+    renderDaily(state.months);
+  }
+  function onDailyPrev() { dailyGoTo(shiftMonth(state.daily.ym || currentYm(), -1)); }
+  function onDailyNext() { dailyGoTo(shiftMonth(state.daily.ym || currentYm(), 1)); }
+  function onDailyToday() { dailyGoTo(currentYm()); }
+  /** Cell click / Enter: toggle the white selection ring (Escape clears it). */
+  function onDailyCellClick(e) {
+    const btn = e.target && e.target.closest ? e.target.closest('#dailyGrid .cal-cell[data-day]') : null;
+    if (!btn) return;
+    const key = btn.getAttribute('data-day');
+    state.daily.sel = state.daily.sel === key ? null : key;
+    renderDaily(state.months);
+    // Re-render replaces the button, which would drop keyboard focus to <body> —
+    // hand it back to the same day so arrows keep walking from there and Esc still lands on a cell.
+    const again = byId('dailyGrid') && byId('dailyGrid').querySelector('.cal-cell[data-day="' + key + '"]');
+    if (again && typeof again.focus === 'function') again.focus();
+  }
+  /** Arrow keys walk the grid (7 = one week); Escape clears the selection and refocuses the cell. */
+  function onDailyGridKeydown(e) {
+    const key = e.key;
+    if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'ArrowUp' && key !== 'ArrowDown' && key !== 'Escape') return;
+    const target = e.target;
+    const grid = byId('dailyGrid');
+    if (!grid || !target || !target.closest) return;
+    const cell = target.closest('.cal-cell[data-day]');
+    if (!cell) return;
+    if (key === 'Escape') {
+      if (!state.daily.sel) return;
+      const day = cell.getAttribute('data-day');
+      state.daily.sel = null;
+      renderDaily(state.months);
+      const again = grid.querySelector('.cal-cell[data-day="' + day + '"]');
+      if (again && typeof again.focus === 'function') again.focus();
+      return;
+    }
+    const cells = Array.prototype.slice.call(grid.querySelectorAll('.cal-cell[data-day]'));
+    const at = cells.indexOf(cell);
+    const step = key === 'ArrowLeft' ? -1 : key === 'ArrowRight' ? 1 : key === 'ArrowUp' ? -7 : 7;
+    const next = at < 0 ? null : cells[at + step];
+    if (!next) return;
+    e.preventDefault(); // arrows must not scroll the page
+    if (typeof next.focus === 'function') next.focus();
   }
   function onChartMove(e) {
     const t = tipTarget(e);
@@ -2610,6 +2860,12 @@ const IBKR = (function () {
     listen(byId('yearSelect'), 'change', onYearChange);
     listen(byId('monthChips'), 'click', onChipClick);
     listen(byId('monthlyBody'), 'click', onRowClick);
+    // daily calendar: nav buttons + the delegated grid (click selects, arrows move, Esc clears)
+    listen(byId('dailyPrev'), 'click', onDailyPrev);
+    listen(byId('dailyNext'), 'click', onDailyNext);
+    listen(byId('dailyToday'), 'click', onDailyToday);
+    listen(byId('dailyGrid'), 'click', onDailyCellClick);
+    listen(byId('dailyGrid'), 'keydown', onDailyGridKeydown);
     // interest rows carry data-month too: the same click selects the month
     listen(pickById(['interestBody', 'interestTableBody']), 'click', onRowClick);
     listen(byId('postedToggle'), 'change', renderAll);
@@ -2707,6 +2963,7 @@ const IBKR = (function () {
   return {
     parseCsv, detectFormat, parseFlex, parseActivityStatement, parseCsvText,
     aggregateByMonth, classify, cashCategory, isAssignmentCode, monthKey, monthLabel, rootOf,
+    dayKey, aggregateByDay, renderDaily,
     tradePasses, prepareTradeFilter, normalizeScope, scopeLabel,
     fmtMoney, fmtCompact, disp, currencyMode, init, loadText, clearAll, renderAll, renderBreakdown, incomeOf, incomeTipText, state,
     getExclude, setExclude, getInclude, setInclude,

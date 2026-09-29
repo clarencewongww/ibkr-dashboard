@@ -87,7 +87,7 @@ Multiple files are concatenated; do not load overlapping periods twice or totals
 
 ---
 
-## 3. Breakdown, interest, filters & currency
+## 3. Breakdown, interest, daily P&L, filters & currency
 
 ### Monthly chart
 
@@ -136,8 +136,9 @@ as a title. Both views convert at render time with the active USD/AUD switch.
 
 ### Interest tab
 
-The **Overview / Interest** tabs above the content (deep-linkable as `#overview` / `#interest`)
-switch views; the Interest tab renders four KPIs, a bar chart and a per-month table:
+The **Overview / Interest / Daily P&L** tabs above the content (deep-linkable as
+`#overview` / `#interest` / `#daily`) switch views; the Interest tab renders four KPIs,
+a bar chart and a per-month table:
 
 | KPI | Maths |
 | --- | --- |
@@ -162,6 +163,35 @@ switch views; the Interest tab renders four KPIs, a bar chart and a per-month ta
   `Posted basis` / `Accrual basis`.
 - **Currency.** The USD/AUD switch applies here like everywhere else: KPIs, bars, tooltips and the
   table are converted at render time from the raw USD amounts (see *Currency* below).
+
+### Daily P&L tab
+
+The third tab (deep-linkable as `#daily`) turns the same aggregation into a **daily calendar**:
+one cell per day, Sun-first, with the month's net P&L in the head. The day grain is a true sibling
+of the month grain — the trade filter (include/exclude + per-kind scopes + the global asset
+radio), the cash categories, the **Posted / Accrual** walk and the USD/AUD conversion are the same
+code paths, so every row of days sums to the month row it belongs to.
+
+- **Head.** The month name is the card title (`#dailyTitle`, e.g. *January 2026*) and the rounded
+  pill (`#dailyPill`) reads `Monthly P&L: +$2,775.00` — `fmtMoney`, `+`/`−` and green/red like the
+  month table.
+- **Cells.** Day number · the day's net P&L (`pos`/`neg`) · `N trade(s)`. Days with no activity stay
+  bare. A day's money total includes trade P&L and that day's cash buckets (interest, dividends,
+  withholding, fees), so a cash-only day shows money without a trade count. Below 620px the trade
+  count hides and the money switches to a compact form (`$1.7k` instead of `$1,739.94`) so every
+  cell stays legible.
+- **Heat tint.** Each day with a non-zero total gets a green (or red) tint whose alpha scales to
+  the day's `|P&L|` against the largest day in the *shown month*, capped well below the text
+  contrast — deliberately theme-neutral, so it reads the same in light and dark. (`aggregateByDay()`
+  also returns a file-wide `maxAbs` for callers that want one scale across months.)
+- **Today & selection.** Today's day number carries a teal ring; clicking (or **Enter** on) a cell
+  toggles the selected white/ink ring. **Escape** clears it. Arrow keys walk the grid (← → by a
+  day, ↑ ↓ by a week); every cell keeps a full `title`/`aria-label` (`Monday, January 5, 2026 ·
+  $391.00 · 2 trades`).
+- **Navigation.** `‹` / `›` step one month (crossing years), **Today** snaps back to the current
+  month — the calendar shows days even where the file has no rows yet, so navigating past the last
+  month is a normal empty month, not an error. Months outside the shown one are dimmed.
+- **Empty.** Until a CSV is loaded the card keeps the placeholder and hides the weekday row.
 
 ### Exclude
 
@@ -315,9 +345,9 @@ override, not a second stylesheet.
 
 | Path | Role |
 | --- | --- |
-| `index.html` | Markup contract: header, year select, month chips (drill-down card header), chart cards, tables, `#postedToggle`, `#tickerBtn` / `#includeMore` / `#tickerSearchClear` / `#tickerCount` / `#filterNote` / `#toTopTickers` / `#tickersToTop`, `#assetToggle` asset radios, `#fxInput` / `#fxReset` / `#fxBadge`, legend income popover `#incomeInfo` / `#incomeHelp`, `#clearBtn`, file input, CSV help `#csvHelpBtn` / `#heroCsvInfo` / `#csvHelpModal`. |
+| `index.html` | Markup contract: header, year select, month chips (drill-down card header), chart cards, tables, `#postedToggle`, `#tickerBtn` / `#includeMore` / `#tickerSearchClear` / `#tickerCount` / `#filterNote` / `#toTopTickers` / `#tickersToTop`, `#assetToggle` asset radios, `#fxInput` / `#fxReset` / `#fxBadge`, legend income popover `#incomeInfo` / `#incomeHelp`, `#clearBtn`, file input, CSV help `#csvHelpBtn` / `#heroCsvInfo` / `#csvHelpModal`, and the Daily P&L calendar shell `#dailyTitle` / `#dailyPill` / `#dailyPrev` / `#dailyNext` / `#dailyToday` / `#dailyGrid`. |
 | `styles.css` | All styling and design tokens (CSS custom properties in `:root`); no external assets. |
-| `app.js` | CSV parser (Flex + Activity Statement), month aggregation, root-symbol include/exclude filter with per-kind scopes, session-only asset filter, USD/AUD rate chain, rendering. Exposes `window.IBKR` for debugging. |
+| `app.js` | CSV parser (Flex + Activity Statement), month + day aggregation (`aggregateByMonth` / `aggregateByDay`), root-symbol include/exclude filter with per-kind scopes, session-only asset filter, USD/AUD rate chain, rendering (charts, tables, the Daily P&L calendar). Exposes `window.IBKR` for debugging. |
 | `manifest.webmanifest` | PWA manifest (`start_url`/`scope`/`id` are `./` so the install works under the Pages sub-path). |
 | `sw.js` | Offline-shell service worker (`ibkr-shell-v3`): allowlisted shell files only, scope resolved from its own URL; never touches CSVs, `data/` or the FX lookups. |
 | `icons/` | PWA icons shipped with the app (`icon.svg`, 192/512, maskable-512, apple-touch-180) — tracked, unlike screengrabs. |

@@ -71,10 +71,11 @@
                         fire the event — Safari/iOS — simply never show it)
              these controls now live in the .toolbar band (moved off the dark hero
              gradient — ids unchanged, .toolbar colours rule in styles.css)
-  Tabs       #tabBtnOverview / #tabBtnInterest — role=tab buttons inside nav.tabs
-             (buttons carry data-tab, panels data-tab-panel: app.js's tab controller
-             keys off those, then flips aria-selected/tabindex and the hidden
-             attribute). #tabBtnOverview starts selected, #tabInterest starts hidden.
+  Tabs       #tabBtnOverview / #tabBtnInterest / #tabBtnDaily — role=tab buttons
+             inside nav.tabs (buttons carry data-tab, panels data-tab-panel: app.js's
+             tab controller keys off those, then flips aria-selected/tabindex and the
+             hidden attribute). #tabBtnOverview starts selected; #tabInterest and
+             #tabDaily start hidden.
   Interest   KPIs #kpiIntTotal #kpiIntAvgDay #kpiIntBest #kpiIntShare ("—" while empty)
              #kpiIntBestSub — month name under the Best-month value (app.js fills it)
              #interestBasis — "Posted basis"/"Accrual basis" chip in the card head;
@@ -83,6 +84,15 @@
                             re-declares the viewBox and draws .chart primitives)
              #interestTip — same hidden/[hidden] contract as #chartTip
              #interestBody — tbody of #interestTable; app.js renders its rows
+  Daily      #dailyTitle — month name ("January 2026"), rewritten by renderDaily()
+             #dailyPill — Monthly P&L value for that month ("+$2,775.00"), fmtMoney
+                        pos/neg class; the card head pill wraps it
+             #dailyPrev / #dailyNext — ±1 month (crosses years); #dailyToday — jump
+                        back to the current month; all real buttons, app.js wired
+             #dailyGrid — role=grid calendar: app.js renders 7-column, Sun-first
+                        button.cal-cell[data-day] cells (day number · P&L · "N trades",
+                        heat tint by |P&L|; .cal-cell--dim / --today / --sel states)
+             the card's .table-placeholder shows while #dailyGrid is empty (:has CSS)
   Tickers    #tickerBtn — opens #tickerModal; its label text is app.js-owned ("Tickers (n)")
              #tickerModal <dialog> · #assetToggle fieldset (radios name="assetToggle",
              value="all"|"options"|"stock") hides the other leg kind dashboard-wide and
@@ -403,12 +413,14 @@
   </section>
 
   <!-- Tabs: app.js toggles aria-selected/tabindex on the buttons and the hidden
-       attribute on the panels. Shell state: Overview selected, Interest hidden. -->
+       attribute on the panels. Shell state: Overview selected, Interest and Daily hidden. -->
   <nav class="tabs" role="tablist" aria-label="Views">
     <button id="tabBtnOverview" class="tab" role="tab" type="button" data-tab="overview"
             aria-selected="true" aria-controls="tabOverview">Overview</button>
     <button id="tabBtnInterest" class="tab" role="tab" type="button" data-tab="interest"
             aria-selected="false" aria-controls="tabInterest" tabindex="-1">Interest</button>
+    <button id="tabBtnDaily" class="tab" role="tab" type="button" data-tab="daily"
+            aria-selected="false" aria-controls="tabDaily" tabindex="-1">Daily P&amp;L</button>
   </nav>
 
   <section id="tabOverview" class="tabpanel" role="tabpanel" data-tab-panel="overview" aria-labelledby="tabBtnOverview">
@@ -701,6 +713,47 @@
         </table>
       </div>
       <p class="table-placeholder">Load a CSV to see interest by month.</p>
+    </section>
+
+  </section>
+
+  <!-- Daily P&L tab: shell only — app.js renders the calendar (#dailyGrid), the
+       month name (#dailyTitle) and the Monthly P&L pill (#dailyPill). Hidden until
+       its tab is selected. Empty state: the placeholder shows while #dailyGrid is
+       empty (styles.css :has rule). -->
+  <section id="tabDaily" class="tabpanel" role="tabpanel" data-tab-panel="daily" aria-labelledby="tabBtnDaily" hidden>
+
+    <section class="card cal-card" id="dailyCard" aria-labelledby="dailyTitle">
+      <div class="card__head">
+        <div class="card__head-copy">
+          <h2 class="card__title cal-title" id="dailyTitle">Daily P&amp;L</h2>
+        </div>
+        <div class="card__head-actions">
+          <span class="cal-pill">Monthly P&amp;L: <strong id="dailyPill" class="num">—</strong></span>
+        </div>
+      </div>
+
+      <!-- prev/next are real buttons (also reachable by keyboard); "Today" snaps the
+           title month back to the current one. app.js owns the month state. -->
+      <div class="cal-bar">
+        <span class="cal-bar__icon" aria-hidden="true">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <rect width="18" height="18" x="3" y="4" rx="2"></rect>
+            <path d="M3 10h18"></path>
+            <path d="M8 2v4"></path>
+            <path d="M16 2v4"></path>
+          </svg>
+        </span>
+        <button id="dailyPrev" class="cal-nav" type="button" aria-label="Previous month">‹</button>
+        <button id="dailyNext" class="cal-nav" type="button" aria-label="Next month">›</button>
+        <button id="dailyToday" class="cal-today" type="button">Today</button>
+      </div>
+
+      <div class="cal-head" aria-hidden="true">
+        <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+      </div>
+      <div id="dailyGrid" class="cal-grid" role="grid" aria-label="Daily P&amp;L calendar"></div>
+      <p class="table-placeholder">Load a CSV to see the daily calendar.</p>
     </section>
 
   </section>
