@@ -174,13 +174,19 @@ are the same code paths, so every row of days sums to the month row it belongs t
   month table.
 - **Cells.** Day number · the day's net P&L (`pos`/`neg`) · `N trade(s)` · an income tag. Days with
   no activity stay bare. A day's money total includes trade P&L and that day's cash buckets (interest,
-  dividends, withholding, fees), so a cash-only day shows money without a trade count. Below 620px
-  the trade count hides and the money switches to a compact, cents-free form sized for a 375px cell;
+  dividends, withholding, fees), so a cash-only day shows money without a trade count. Every day box
+  is the same fixed height — each row is an 84px track (76px below 620px) and the cell fills it — so
+  a month's rows stay even however much a day carries; content that does not fit clips inside its
+  cell. On desktop the trade count and the income tag share one `.cal-sub` line
+  (`2 trades · Interest`, a subtle middot separator that appears only when both are present);
+  below 620px the pair stacks and the trade count hides with the money
+  switching to a compact, cents-free form sized for a 375px cell;
   a value that would spill keeps its sign and magnitude but drops the `$` (`$420`, `$2k`, `-$13`,
   then `1.7k`, `-617`, `-12k`). The full `fmtMoney` value stays in its `title`/`aria-label`.
-- **Income tag.** A day with cash rows renders a small teal `.cal-tag` under the trades line:
+- **Income tag.** A day with cash rows renders a small teal `.cal-tag` on the cell's sub line:
   **Interest** (posted interest or an accrual split), **Dividend** (dividends + payment in lieu),
-  **Interest + Div** when both land that day, or **Income** for withholding/fees-only days. It is
+  **Interest + Div** when both land that day, **Fees** when fees are the day's only cash kind, or
+  **Income** for withholding-only days. It is
   included in the cell's `title`/`aria-label`, and a cash-only day keeps its tag and amount with no
   trade count.
 - **Tint.** One flat green tint for any positive day (`rgba(72,187,120,.18)`) and one flat red tint
@@ -338,8 +344,12 @@ The read-only **Rate** readout next to it shows the applied factor for the selec
 
 ### Theme (light / dark / system)
 
-The toolbar's **Light / Dark / System** switch — icon-only (sun / moon / monitor) and pinned to
-the **right end** of the toolbar row — repaints the whole dashboard. All colours come from the
+The toolbar's **Light / Dark / System** switch — icon-only (sun / moon / monitor) — repaints the
+whole dashboard. From 1180px up it sits in flow at the **right end** of the toolbar row; at every
+wrapping width below that (iPad/phone, where the controls spill onto extra lines) it leaves the row
+and pins to the toolbar's **top-right corner** — with 56px of right padding reserved in the row so
+the first line of controls never slides under it — and it stays visible even when the mobile
+**Controls** fold hides the other controls. All colours come from the
 `:root` token block in `styles.css`, so the dark theme is a token override, not a second
 stylesheet.
 

@@ -553,10 +553,11 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 }
 
 /* Mobile fold: #toolbarToggle is the first child of the row and the only child
-   .toolbar.is-collapsed keeps below 620px, so the sticky band shrinks to one
-   32px control (8px + 32px + 8px ≈ 48px). The base display:none sits after
-   .btn (same specificity), so desktop/tablet never sees the toggle and never
-   folds; the 619px query below flips it on and hides the rest of the row. */
+   .toolbar.is-collapsed keeps below 620px besides the corner-pinned theme button,
+   so the sticky band shrinks to one 32px control (8px + 32px + 8px ≈ 48px). The
+   base display:none sits after .btn (same specificity), so desktop/tablet never
+   sees the toggle and never folds; the 619px query below flips it on and hides
+   the rest of the row. */
 .toolbar__toggle {
   display: none;
   align-items: center;
@@ -572,12 +573,9 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 @media (max-width: 619px) {
   .toolbar__toggle { display: inline-flex; }
   /* every other direct child leaves the flow: no clipped/hidden controls are
-     reachable while folded (the row is either folded or fully wrapped) */
-  .toolbar.is-collapsed .toolbar__inner > :not(.toolbar__toggle) { display: none; }
-  /* the theme cycle rides the first wrapped row: order:-1 pulls it up without
-     touching the DOM (it stays last for desktop's right-end alignment) and the
-     auto margin parks it beside the Controls toggle at the row's right edge */
-  .toolbar__inner > .theme-cycle { order: -1; margin-left: auto; }
+     reachable while folded — except the theme button, which lives out of flow
+     in the row's top-right corner (rule below) and stays visible folded */
+  .toolbar.is-collapsed .toolbar__inner > :not(.toolbar__toggle):not(.theme-cycle) { display: none; }
 }
 
 .toolbar .field__label { color: var(--muted); }
@@ -750,10 +748,13 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 /* Theme cycle (#themeCycle): one icon button that cycles system → light → dark.
    All three 16px sun / moon / monitor SVGs ride in the DOM (.tc-icon) and CSS
    shows exactly the one matching the button's data-mode, so app.js only flips
-   the attribute and the "Theme: …" label/title. Last child of #toolbarInner
-   with margin-left:auto, so it sits flush right on desktop; below 620px
-   order:-1 lifts it into the first wrapped row (still hidden while the toolbar
-   is folded away, like every other child). */
+   the attribute and the "Theme: …" label/title. Placement: from 1180px up the
+   button stays in flow as #toolbarInner's last child and margin-left:auto parks
+   it flush right. Below 1180px (the widths where the row wraps) it leaves the
+   flow and pins to the band's top-right corner — .toolbar__inner is
+   position:relative, and its padding-right:56px in that query keeps the first
+   wrapped row clear of the button. It stays visible when the <620px Controls
+   fold hides the other children (the fold rule exempts .theme-cycle). */
 .theme-cycle {
   display: inline-flex;
   align-items: center;
@@ -786,7 +787,26 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 .theme-cycle[data-mode="dark"] .tc-icon--moon,
 .theme-cycle[data-mode="system"] .tc-icon--monitor { display: block; }
 
-.toolbar__inner > .theme-cycle { margin-left: auto; }
+/* desktop: in flow, last child, pushed to the row's right end by the auto margin */
+@media (min-width: 1180px) {
+  .toolbar__inner > .theme-cycle { margin-left: auto; }
+}
+
+/* wrapping widths (iPad/phone): out of the wrapped row's flow, pinned to the
+   toolbar's top-right corner. The inner's 56px right padding (≈ 12px inset +
+   the 38px button) reserves the corner so the first wrapped row's controls
+   never slide under it. It stays put when .is-collapsed hides the other
+   children (fold rule above), so the theme is always reachable. */
+@media (max-width: 1179px) {
+  .toolbar__inner { padding-right: 56px; }
+  .toolbar__inner > .theme-cycle {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    z-index: 1;
+    margin-left: 0;
+  }
+}
 
 /* ----------------------------------------------------------------- card --- */
 .card {
@@ -1097,6 +1117,12 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   font-weight: 600;
 }
 
+/* uniform day boxes: every row is exactly one fixed track (84px desktop, 76px
+   below 620px — see the query at the end of the calendar block), so a month's
+   rows are identical whether a day carries one line or four; the cells fill
+   their track and clip whatever does not fit */
+#dailyGrid { grid-auto-rows: 84px; }
+
 /* one calendar day: button reset + card surface; the flat positive/negative tint
    (app.js) paints over the background, the states below only draw rings so they
    never fight it */
@@ -1105,6 +1131,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
+  height: 100%; /* fills the fixed row track (#dailyGrid) — no cell grows taller */
   min-height: 72px;
   padding: 6px 8px;
   border: 1px solid var(--border);
@@ -1164,6 +1191,24 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
    "$1,739.94" cell never collapses to "$…". */
 .cal-pnl--short { display: none; }
 
+/* .cal-sub — the cell's bottom line: app.js wraps the "N trades" meta and the
+   income tag in it. On desktop both ride one line ("2 trades · Interest", the
+   tag separated by a subtle middot) and the whole line ellipsises inside the
+   fixed cell; below 620px it flips to a column (the query at the end of the
+   calendar block hides the meta line anyway) */
+.cal-sub {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* the middot only exists when a trade line precedes the tag — a cash-only day
+   (tag alone) never gets a leading separator */
+.cal-sub .cal-meta + .cal-tag::before { content: '·'; margin-right: 5px; opacity: .6; }
+
 .cal-meta {
   max-width: 100%;
   overflow: hidden;
@@ -1173,9 +1218,10 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   font-size: 11px;
 }
 
-/* income indicator under the trades line: "Interest", "Dividend", "Interest + Div"
-   (or "Income" for withholding/fees-only days) — teal, tiny, ellipsised like the
-   pnl/meta lines so a narrow cell never overflows */
+/* income indicator on the cell's .cal-sub line: "Interest", "Dividend",
+   "Interest + Div", "Fees" (fees the day's only cash kind) or "Income"
+   (withholding-only) — teal, tiny, ellipsised like the pnl/meta lines so a
+   narrow cell never overflows */
 .cal-tag {
   max-width: 100%;
   overflow: hidden;
@@ -1258,7 +1304,13 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   .cal-head,
   .cal-grid { gap: 4px; }
   .cal-cell { min-height: 56px; padding: 4px; }
+  /* the same uniform rows, one size down for 375px-class screens */
+  #dailyGrid { grid-auto-rows: 76px; }
   .cal-meta { display: none; }
+  /* the pair stacks (the meta line is hidden here) and the middot goes with it
+     (selector matches the desktop separator's specificity) */
+  .cal-sub { display: flex; flex-direction: column; gap: 2px; }
+  .cal-sub .cal-meta + .cal-tag::before { content: none; }
   .cal-pnl { font-size: 11px; }
   .cal-pnl--full { display: none; }
   .cal-pnl--short { display: block; }

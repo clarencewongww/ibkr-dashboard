@@ -107,8 +107,12 @@
                         the Year select pins to the selected year, and
                         renderDaily()'s clamp is reused.
              #dailyGrid — role=grid calendar: app.js renders 7-column, Monday-first
-                        button.cal-cell[data-day] cells (day number · P&L · "N trades" ·
-                        an income tag for cash days: Interest / Dividend / Interest + Div).
+                        button.cal-cell[data-day] cells (day number · P&L · a .cal-sub
+                        line: "N trades" plus an income tag for cash days — Interest /
+                        Dividend / Interest + Div / Fees). The sub line is one line on
+                        desktop, stacked below 620px; every row is a fixed 84px track
+                        (76px below 620px) so all day boxes are uniform and long content
+                        clips inside its cell.
                         One flat green tint for any positive day and one flat red tint for
                         any negative (no magnitude scaling); Sat/Sun cells carry
                         .cal-cell--weekend (grey surface) and keep the tint when the day
@@ -164,9 +168,10 @@
              scroller, no hidden-scrollbar trick); the band keeps its height.
              Below 620px #toolbarToggle (.toolbar__toggle, its first child)
              folds the row: .is-collapsed on the #toolbar band hides every
-             other child (styles.css), the chevron flips, aria-expanded
-             follows and app.js persists the fold (ibkr-toolbar-collapsed-v1).
-             From 620px up the toggle never renders and the row never folds.
+             other child but the theme button (styles.css), the chevron flips,
+             aria-expanded follows and app.js persists the fold
+             (ibkr-toolbar-collapsed-v1). From 620px up the toggle never
+             renders and the row never folds.
   Basis      #postedToggle  fieldset; radios name="postedToggle" value="posted"|"accrual".
              app.js listens for "change" on the fieldset (radios bubble) and reads
              input[name="postedToggle"]:checked → value "accrual" = accrual interest.
@@ -228,9 +233,13 @@
              is the markup default). Holds all three 16px sun / moon / monitor SVGs
              (.tc-icon) and app.js sets data-mode="light"|"dark"|"system" plus the
              "Theme: …" aria-label/title; styles.css shows exactly the icon that
-             matches. Last child of #toolbarInner (margin-left:auto parks it at the
-             row's right end on desktop; below 620px order:-1 lifts it into the
-             first wrapped row) and folded away below 620px with the rest. app.js
+             matches. Last child of #toolbarInner: from 1180px up it stays in
+             flow and margin-left:auto parks it at the row's right end; below
+             1180px it leaves the flow and styles.css pins it to the toolbar's
+             top-right corner (the inner's padding-right reserves that corner,
+             so the first wrapped row never slides under it) — and that corner
+             placement survives the <620px Controls fold, which exempts
+             .theme-cycle while hiding the other children. app.js
              persists the pick under ibkr-theme-v1 and calls applyTheme():
              [data-theme] on <html> switches the styles.css dark-token block, the
              theme-color meta follows, and "system" tracks matchMedia live. The
@@ -286,15 +295,19 @@
      Sticky top z-index 15 (under the footer/dialogs, over every card). The row
      flex-wraps at every width — one slim row while the controls fit, extra
      lines when they do not — so no control is ever clipped or hidden behind a
-     scroller (.toolbar__inner). Below 620px the first child (#toolbarToggle)
+     scroller (.toolbar__inner). The theme button pins to the band's top-right
+     corner at every wrapping width (styles.css; in flow at the right end from
+     1180px up). Below 620px the first child (#toolbarToggle)
      folds the row behind one button (.toolbar.is-collapsed, persisted under
-     ibkr-toolbar-collapsed-v1); the Tickers ↑ shortcuts unfold it first. -->
+     ibkr-toolbar-collapsed-v1), which leaves the theme button visible; the
+     Tickers ↑ shortcuts unfold it first. -->
 <section class="toolbar" id="toolbar" aria-label="Dashboard controls">
   <div class="container toolbar__inner" id="toolbarInner">
 
     <!-- Mobile fold: first child of the row, hidden from 620px up. It toggles
-         .toolbar.is-collapsed, which hides every other child below 620px
-         (styles.css); app.js owns the class, aria-expanded and the stored state. -->
+         .toolbar.is-collapsed, which hides every other child but the theme
+         button below 620px (styles.css); app.js owns the class, aria-expanded
+         and the stored state. -->
     <button id="toolbarToggle" class="btn btn--ghost toolbar__toggle" type="button"
             aria-expanded="true" aria-controls="toolbarInner">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -396,12 +409,13 @@
     <!-- Theme cycle: one icon button cycling system → light → dark (system follows the
          OS, the markup default). All three 16px icons ride in the DOM and styles.css
          shows exactly the one matching data-mode; app.js owns data-mode plus the
-         aria-label/title ("Theme: …"). Last child of the row, so margin-left:auto
-         parks it at the toolbar's right end on desktop — below 620px order:-1 lifts
-         it into the first wrapped row. app.js persists the pick under ibkr-theme-v1
+         aria-label/title ("Theme: …"). Last child of the row: from 1180px up
+         margin-left:auto parks it at the toolbar's right end; below 1180px styles.css
+         takes it out of flow and pins it to the band's top-right corner, where it
+         stays visible even while the <620px Controls fold hides its siblings. app.js
+         persists the pick under ibkr-theme-v1
          and applies it to <html data-theme>; the inline boot script in <head> paints
-         the stored pick before first paint. Still a .toolbar__inner child, so the
-         mobile Controls fold hides it like every sibling. -->
+         the stored pick before first paint. -->
     <button id="themeCycle" class="theme-cycle" type="button"
             aria-label="Theme: System" title="Theme: System" data-mode="system">
       <svg class="tc-icon tc-icon--sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false">

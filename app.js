@@ -1760,8 +1760,9 @@ const IBKR = (function () {
 
   /**
    * Daily P&L calendar (#dailyGrid): a Monday-first month grid of button.cal-cell rows —
-   * day number · fmtMoney(day total) · "N trades" · an income tag ("Interest" /
-   * "Dividend" / "Interest + Div") when the day has cash rows. One flat green tint for
+   * day number · fmtMoney(day total) · a .cal-sub line ("N trades" + an income tag —
+   * "Interest" / "Dividend" / "Interest + Div" / "Fees" — one line on desktop,
+   * stacked below 620px) when the day has activity. One flat green tint for
    * any positive day and one flat red tint for any negative day — no magnitude scaling
    * — painted on in-month days only; Sat/Sun cells carry .cal-cell--weekend (grey
    * surface, muted day number) and keep the tint when the day has P&L or income.
@@ -1876,13 +1877,17 @@ const IBKR = (function () {
       // Two money spans: the full fmtMoney value everywhere, swapped for the
       // compact fmtCellMoney on narrow screens (styles.css), where a
       // "$1,739.94" or "$1.7k" string would ellipsise to "$…".
+      // .cal-sub wraps the trade count and the income tag: one line on desktop
+      // ("2 trades · Interest"), stacked below 620px where the meta line hides.
       return `<button class="${classes.join(' ')}" type="button" role="gridcell" data-day="${c.key}"` +
         ` tabindex="${c.key === roving ? '0' : '-1'}" aria-label="${esc(label)}" title="${esc(label)}"${tint}>` +
         `<span class="cal-day">${c.day}</span>` +
         (total !== 0 || count ? `<span class="cal-pnl cal-pnl--full ${pnlCls}">${money}</span>` +
           `<span class="cal-pnl cal-pnl--short ${pnlCls}" aria-hidden="true">${short}</span>` : '') +
-        (count ? `<span class="cal-meta">${tradeText}</span>` : '') +
-        (tag ? `<span class="cal-tag" aria-hidden="true">${esc(tag)}</span>` : '') +
+        (count || tag ? `<span class="cal-sub">` +
+          (count ? `<span class="cal-meta">${tradeText}</span>` : '') +
+          (tag ? `<span class="cal-tag" aria-hidden="true">${esc(tag)}</span>` : '') +
+          `</span>` : '') +
         `</button>`;
     }).join('');
     renderDailyDetail(agg);
@@ -1890,8 +1895,9 @@ const IBKR = (function () {
 
   /**
    * Income tag for a calendar cell — "Interest" (interest rows / accrual splits),
-   * "Dividend" (dividends + payment in lieu), "Interest + Div" for both, or "Income"
-   * when only withholding/fees land that day. '' without income rows.
+   * "Dividend" (dividends + payment in lieu), "Interest + Div" for both, "Fees"
+   * when fees are the day's only cash kind, or "Income" for withholding-only days.
+   * '' without income rows.
    */
   function dayIncomeTag(bucket, incomeRows) {
     if (!bucket || !incomeRows || !incomeRows.length) return '';
@@ -1900,6 +1906,7 @@ const IBKR = (function () {
     if (interest && dividends) return 'Interest + Div';
     if (interest) return 'Interest';
     if (dividends) return 'Dividend';
+    if (Number(bucket.fees) !== 0) return 'Fees';
     return 'Income';
   }
 
@@ -3352,7 +3359,8 @@ const IBKR = (function () {
   /**
    * Mobile toolbar fold — #toolbarToggle flips .toolbar.is-collapsed, which
    * styles.css honours below 620px by hiding every .toolbar__inner child but
-   * the toggle (the sticky band shrinks to one 32px row). Expanding is the
+   * the toggle and the corner-pinned theme button (the sticky band shrinks to
+   * one 32px row). Expanding is the
    * layout change that matters: the wider row is re-measured for the "+n" chip
    * count (its clip depends on the laid-out width) and for the popover clamps.
    * Restore and the Tickers ↑ shortcut call this directly and never write
