@@ -19,21 +19,23 @@
 <title>IBKR Realised P&amp;L · Local Dashboard</title>
 <!-- inline data-URI favicon: keeps the page at zero network requests beyond the 3 local files -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%23151928'/%3E%3Cg fill='none' stroke='%234FD1C5' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 19v-5'/%3E%3Cpath d='M12 19V6'/%3E%3Cpath d='M18 19v-8'/%3E%3C/g%3E%3C/svg%3E">
-<!-- Theme boot: resolves the stored light/dark/system pick and stamps
-     <html data-theme> before the stylesheet paints, so a dark reload never
-     flashes the light shell. Mirrors applyTheme() in app.js; 'system' asks
-     matchMedia. try/catch: private-mode storage can throw. -->
+<!-- Theme boot: resolves the stored light/dark/system pick before the stylesheet
+     paints and stamps <html data-theme> + the theme-color meta with the same
+     values applyTheme() in app.js writes, so a dark reload never flashes light
+     and the browser chrome matches from the first paint. Mirrors applyTheme() in
+     app.js; 'system' asks matchMedia. try/catch wraps ONLY the storage read:
+     private-mode storage can throw, and that must not force light on a dark OS
+     (the OS preference is resolved outside the catch). -->
 <script>
 (function () {
-  try {
-    var stored = localStorage.getItem('ibkr-theme-v1');
-    var mode = stored === 'light' || stored === 'dark' ? stored : 'system';
-    var dark = mode === 'dark' ||
-      (mode === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  } catch (err) {
-    document.documentElement.dataset.theme = 'light';
-  }
+  var stored = null;
+  try { stored = localStorage.getItem('ibkr-theme-v1'); } catch (err) { /* private mode — fall through to 'system' */ }
+  var mode = stored === 'light' || stored === 'dark' ? stored : 'system';
+  var dark = mode === 'dark' ||
+    (mode === 'system' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  var meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', dark ? '#0F1419' : '#F7FAFC');
 })();
 </script>
 <link rel="stylesheet" href="styles.css">
@@ -176,7 +178,8 @@
              (radios bubble), persists the pick under ibkr-theme-v1 and calls applyTheme():
              [data-theme] on <html> switches the styles.css dark-token block, the
              theme-color meta follows, and "system" tracks matchMedia live. The inline
-             boot script in <head> resolves the same key before first paint (no flash).
+             boot script in <head> resolves the same key before first paint (no flash) and stamps the
+             same theme-color value.
   Breakdown  #breakdownCard  card shell · #breakdownSvg — 720x300 viewBox, same contract
              as #chartSvg (app.js re-declares the viewBox and draws .chart primitives)
              #breakdownTip — same hidden/[hidden] contract as #chartTip
