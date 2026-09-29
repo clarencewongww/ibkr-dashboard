@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- FX rate auto-refreshes on each CSV load (fixed URL, currency codes only, no portfolio data;
-     manual override disables network). no-referrer keeps this page's URL (and any query string)
-     out of that request. -->
+<!-- Currency: a USD rate map (AUD, CNY, SGD) auto-refreshes on each CSV load via fixed
+     keyless GETs (currency codes only, no portfolio data). The toolbar rate is read-only;
+     no-referrer keeps this page's URL (and any query string) out of those requests. -->
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#151928">
@@ -64,6 +64,12 @@
                         subtitle (with its own #heroCsvHelp .info-tip; focus
                         returns to whichever opener was used)
              #yearSelect app.js owns the <option> list ("all" = All years)
+             #currencySelect display-currency <select> (USD default · AUD · CNY · SGD);
+                        app.js reads its value in currencyMode() and converts every
+                        money figure at render time from the raw USD amounts
+             #fxRate    read-only toolbar rate ("1 USD = 1.4254 AUD"), rewritten by
+                        renderAll()/renderFxRate() for the selected currency; the
+                        editable rate input and its "/Auto" reset were removed
              #fileLabel  file name text ("No files selected" / "<name> (cached)")
              #installBtn app.js-owned PWA affordance in the toolbar band: hidden in
                         the shell, revealed by beforeinstallprompt, hidden again on
@@ -101,8 +107,12 @@
                         the Year select pins to the selected year, and
                         renderDaily()'s clamp is reused.
              #dailyGrid — role=grid calendar: app.js renders 7-column, Monday-first
-                        button.cal-cell[data-day] cells (day number · P&L · "N trades",
-                        heat tint by |P&L|; .cal-cell--dim / --today / --sel states).
+                        button.cal-cell[data-day] cells (day number · P&L · "N trades" ·
+                        an income tag for cash days: Interest / Dividend / Interest + Div).
+                        One flat green tint for any positive day and one flat red tint for
+                        any negative (no magnitude scaling); Sat/Sun cells carry
+                        .cal-cell--weekend (grey surface) and keep the tint when the day
+                        has P&L or income. .cal-cell--dim / --today / --sel states).
                         The `.cal-head` weekday row below is M T W T F S S to match.
              #dailyDetail — hidden until a day is selected; app.js fills the date
                         (#dailyDetailDate, "Wed 14 Jan 2026"), the Day P&L pill
@@ -112,11 +122,11 @@
                         cash rows only — never counted as trades). A day with no rows
                         shows #dailyDetailEmpty ("No activity this day."); a cash-only
                         day keeps the trades group with its "No trades this day." line.
-                        On touch / ≤620px selecting a day scrolls this card under the
-                        sticky toolbar (scroll-margin-top in styles.css) and
-                        #dailyDetailTop — the up-arrow button in this card's head,
-                        shown at those widths only — returns to #dailyCard with the
-                        selected cell re-focused (preventScroll).
+                        Selecting a day scrolls this card under the sticky toolbar on
+                        every viewport (scroll-margin-top in styles.css) and
+                        #dailyDetailTop — the up-arrow button in this card's head, shown
+                        at every width — returns to #dailyCard with the selected cell
+                        re-focused (preventScroll).
              the card's .table-placeholder shows while #dailyGrid is empty (:has CSS)
   Tickers    #tickerBtn — opens #tickerModal; its label text is app.js-owned ("Tickers (n)")
              #tickerModal <dialog> · #assetToggle fieldset (radios name="assetToggle",
@@ -200,23 +210,27 @@
              #interestTable thead is static (Month | Interest | Trades | Share · Trades/Share
                             headers carry title tooltips) · tbody#interestBody rows are app.js-owned
              cells use .num .pos .neg · monthly rows carry .is-clickable + [data-month]
-  Currency   #currencyToggle  fieldset; radios name="currencyToggle" value="usd"|"aud"
-             ("usd" checked). app.js listens for "change" on the fieldset (radios bubble)
-             and reads input[name="currencyToggle"]:checked.
-             #fxInput  manual USD/AUD rate (text + inputmode=decimal; empty = automatic)
-             #fxReset  button → back to the automatic rate
-             #fxBadge  footer status text ("FX: live · <date>" / "FX: manual" / "FX: …");
-                        focusable — hover shows its title, focus reveals the #fxDetail
-                        tooltip via .fx-wrap (app.js writes both)
+  Currency   #currencySelect  display-currency <select> (USD selected by default; AUD, CNY,
+                              SGD) — app.js reads it on change in currencyMode() and
+                              converts every money figure at render time. USD is the 1:1
+                              base; the other three convert via state.fx.rates.
+             #fxRate  read-only toolbar rate for the selected currency ("1 USD = 1.4254
+                      AUD"), filled on every render; not an input.
+             #fxBadge  footer status text ("FX: <source> · <date> · 1 USD=<rate> <CUR>" /
+                        "FX: approximate" / "FX: …"); focusable — hover shows its title,
+                        focus reveals the #fxDetail tooltip via .fx-wrap (app.js writes
+                        both, for the selected currency)
              #fxDetail app.js fills it with the full source detail; .fx-detail is the
                         footer tooltip, hidden until #fxBadge is hovered or focused
   Theme      #themeToggle  fieldset; radios name="themeToggle" value="light"|"dark"|"system"
-             ("system" checked in markup). app.js listens for "change" on the fieldset
-             (radios bubble), persists the pick under ibkr-theme-v1 and calls applyTheme():
-             [data-theme] on <html> switches the styles.css dark-token block, the
-             theme-color meta follows, and "system" tracks matchMedia live. The inline
-             boot script in <head> resolves the same key before first paint (no flash) and stamps the
-             same theme-color value.
+             ("system" checked in markup). Icon-only pills (sun / moon / monitor, inline
+             16px SVGs, aria-label on each input); last child of #toolbarInner (right end
+             of the row, still folded away below 620px with the rest). app.js listens for
+             "change" on the fieldset (radios bubble), persists the pick under
+             ibkr-theme-v1 and calls applyTheme(): [data-theme] on <html> switches the
+             styles.css dark-token block, the theme-color meta follows, and "system"
+             tracks matchMedia live. The inline boot script in <head> resolves the same
+             key before first paint (no flash) and stamps the same theme-color value.
   Breakdown  #breakdownCard  card shell · #breakdownSvg — 720x300 viewBox, same contract
              as #chartSvg (app.js re-declares the viewBox and draws .chart primitives)
              #breakdownTip — same hidden/[hidden] contract as #chartTip
@@ -262,8 +276,8 @@
 </header>
 
 <!-- Toolbar: import + view controls lifted out of the dark hero onto the light
-     surface. Ids are unchanged (#yearSelect #currencyToggle #fxInput #fxReset
-     #fileInput #clearBtn); styles.css carries the .toolbar colour overrides.
+     surface. Ids are unchanged (#yearSelect #currencySelect #fxRate #fileInput
+     #clearBtn); styles.css carries the .toolbar colour overrides.
      Sticky top z-index 15 (under the footer/dialogs, over every card). The row
      flex-wraps at every width — one slim row while the controls fit, extra
      lines when they do not — so no control is ever clipped or hidden behind a
@@ -291,45 +305,22 @@
       </select>
     </div>
 
-    <fieldset id="currencyToggle" class="segmented" aria-label="Display currency">
-      <legend class="visually-hidden">Currency</legend>
-      <label class="segmented__opt">
-        <input type="radio" name="currencyToggle" id="currencyToggleUsd" value="usd" checked>
-        <span class="segmented__pill">USD</span>
-      </label>
-      <label class="segmented__opt">
-        <input type="radio" name="currencyToggle" id="currencyToggleAud" value="aud">
-        <span class="segmented__pill">AUD</span>
-      </label>
-    </fieldset>
+    <div class="field">
+      <label class="field__label" for="currencySelect">Currency</label>
+      <select id="currencySelect" class="select" name="currencySelect" aria-label="Display currency">
+        <option value="usd" selected>USD</option>
+        <option value="aud">AUD</option>
+        <option value="cny">CNY</option>
+        <option value="sgd">SGD</option>
+      </select>
+    </div>
 
-    <!-- Theme switch: light / dark / system (default follows the OS). app.js
-         persists the pick under ibkr-theme-v1 and applies it to <html data-theme>;
-         the inline boot script in <head> paints the stored pick before first paint. -->
-    <fieldset id="themeToggle" class="segmented segmented--asset" aria-label="Theme">
-      <legend class="visually-hidden">Theme</legend>
-      <label class="segmented__opt">
-        <input type="radio" name="themeToggle" id="themeToggleLight" value="light">
-        <span class="segmented__pill">Light</span>
-      </label>
-      <label class="segmented__opt">
-        <input type="radio" name="themeToggle" id="themeToggleDark" value="dark">
-        <span class="segmented__pill">Dark</span>
-      </label>
-      <label class="segmented__opt">
-        <input type="radio" name="themeToggle" id="themeToggleSystem" value="system" checked>
-        <span class="segmented__pill">System</span>
-      </label>
-    </fieldset>
-
+    <!-- Read-only applied rate for the selected currency ("1 USD = 1.4254 AUD"), filled
+         by renderAll() from the cached/fetched USD rate map; the editable rate input,
+         its Auto reset and the manual override are gone. -->
     <div class="field field--fx">
-      <label class="field__label" for="fxInput">Rate USD/AUD</label>
-      <div class="fx-row">
-        <input id="fxInput" class="input" type="text" inputmode="decimal" autocomplete="off"
-               spellcheck="false" placeholder="1.423" aria-describedby="fxHint">
-        <button id="fxReset" class="btn btn--ghost" type="button">Auto</button>
-        <span id="fxHint" class="visually-hidden">Leave empty to use the automatic rate.</span>
-      </div>
+      <span class="field__label">Rate</span>
+      <span id="fxRate" class="fx-rate num" title="Applied USD conversion rate">—</span>
     </div>
 
     <div class="field field--load">
@@ -394,6 +385,42 @@
       Install app
     </button>
 
+    <!-- Theme switch: icon-only light / dark / system (default follows the OS), the last
+         child of the row so it sits at the toolbar's right end. app.js persists the pick
+         under ibkr-theme-v1 and applies it to <html data-theme>; the inline boot script
+         in <head> paints the stored pick before first paint. Still a
+         .toolbar__inner child, so the mobile Controls fold hides it like every sibling. -->
+    <fieldset id="themeToggle" class="segmented segmented--theme" aria-label="Theme">
+      <legend class="visually-hidden">Theme</legend>
+      <label class="segmented__opt" title="Light theme">
+        <input type="radio" name="themeToggle" id="themeToggleLight" value="light" aria-label="Light theme">
+        <span class="segmented__pill">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>
+          </svg>
+        </span>
+      </label>
+      <label class="segmented__opt" title="Dark theme">
+        <input type="radio" name="themeToggle" id="themeToggleDark" value="dark" aria-label="Dark theme">
+        <span class="segmented__pill">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </span>
+      </label>
+      <label class="segmented__opt" title="System theme">
+        <input type="radio" name="themeToggle" id="themeToggleSystem" value="system" checked aria-label="System theme">
+        <span class="segmented__pill">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
+        </span>
+      </label>
+    </fieldset>
+
   </div>
 </section>
 
@@ -447,7 +474,7 @@
     <button id="tabBtnInterest" class="tab" role="tab" type="button" data-tab="interest"
             aria-selected="false" aria-controls="tabInterest" tabindex="-1">Interest</button>
     <button id="tabBtnDaily" class="tab" role="tab" type="button" data-tab="daily"
-            aria-selected="false" aria-controls="tabDaily" tabindex="-1">Daily P&amp;L</button>
+            aria-selected="false" aria-controls="tabDaily" tabindex="-1">Daily P&amp;L Calendar</button>
   </nav>
 
   <section id="tabOverview" class="tabpanel" role="tabpanel" data-tab-panel="overview" aria-labelledby="tabBtnOverview">
@@ -796,8 +823,8 @@
           <h3 class="card__title cal-title cal-detail__date" id="dailyDetailDate">Day</h3>
         </div>
         <div class="card__head-actions">
-          <!-- phones/coarse pointers only (styles.css): jumps back to #dailyCard and
-               re-focuses the selected cell — app.js onDailyDetailTop -->
+          <!-- all viewports (styles.css): jumps back to #dailyCard and re-focuses the
+               selected cell — app.js onDailyDetailTop -->
           <button id="dailyDetailTop" class="cal-nav" type="button"
                   aria-label="Back to calendar" title="Back to calendar">↑</button>
           <span class="cal-pill">Day P&amp;L: <strong id="dailyDetailPill" class="num">—</strong></span>
@@ -856,7 +883,7 @@
       <!-- #fxBadge is focusable: hover shows the native title, focus reveals #fxDetail -->
       <span class="fx-wrap">
         <span id="fxBadge" class="fx-badge" aria-live="polite" tabindex="0"
-              aria-describedby="fxDetail" title="FX source and applied rate">FX: loading</span>
+              aria-describedby="fxDetail" title="FX provider, payload date and applied rate">FX: loading</span>
         <span id="fxDetail" class="fx-detail"></span>
       </span>
     </p>

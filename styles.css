@@ -485,7 +485,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   }
 }
 
-/* text input — ticker search (#tickerSearch) and the manual FX rate (#fxInput) */
+/* text input — the ticker search (#tickerSearch) */
 .input {
   width: 100%;
   min-height: 32px;
@@ -509,19 +509,22 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   .input { font-size: 16px; }
 }
 
-/* the FX rate sits on the hero gradient, so it inverts */
-.field--fx .input {
-  width: 112px;
-  flex: none;
-  border-color: rgba(255, 255, 255, .28);
-  background: rgba(255, 255, 255, .08);
-  color: #fff;
+/* the toolbar's read-only rate display ("1 USD = 1.4254 AUD") — sits where the old
+   editable FX input did, same 32px row height so the band keeps its size */
+.field--fx { flex: none; }
+
+.fx-rate {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--ink);
 }
 
-.field--fx .input::placeholder { color: rgba(255, 255, 255, .45); }
-.field--fx .input:hover { border-color: rgba(255, 255, 255, .55); }
-
-.fx-row { display: flex; align-items: center; gap: 8px; }
+/* muted while the selected currency still runs on its baked approximation */
+.fx-rate--approx { color: var(--muted); }
 
 /* -------------------------------------------------------------- toolbar --- */
 /* Import + view controls, moved off the dark hero onto the light surface.
@@ -585,14 +588,8 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   border-color: var(--muted);
 }
 
-.toolbar .field--fx .input {
-  border-color: var(--border);
-  background: var(--card);
-  color: var(--ink);
-}
-
-.toolbar .field--fx .input::placeholder { color: var(--muted); }
-.toolbar .field--fx .input:hover { border-color: var(--muted); }
+.toolbar .field--fx .fx-rate { color: var(--ink); }
+.toolbar .field--fx .fx-rate--approx { color: var(--muted); }
 
 .toolbar .file-label { color: var(--muted); }
 
@@ -725,6 +722,13 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   outline: 2px solid var(--teal);
   outline-offset: 2px;
 }
+
+/* icon-only variant (#themeToggle): square pills holding one 16px sun/moon/monitor
+   SVG each — no text label, the radio's aria-label names the mode. Last child of
+   #toolbarInner with margin-left:auto, so it always sits at the row's right end. */
+.segmented--theme .segmented__pill { padding: 4px 9px; }
+.segmented--theme .icon { display: block; }
+.toolbar__inner > .segmented--theme { margin-left: auto; }
 
 /* ----------------------------------------------------------------- card --- */
 .card {
@@ -1035,8 +1039,9 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   font-weight: 600;
 }
 
-/* one calendar day: button reset + card surface; the tint (app.js) paints over
-   the background, the states below only draw rings so they never fight it */
+/* one calendar day: button reset + card surface; the flat positive/negative tint
+   (app.js) paints over the background, the states below only draw rings so they
+   never fight it */
 .cal-cell {
   display: flex;
   flex-direction: column;
@@ -1058,6 +1063,11 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 .cal-cell:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 
 .cal-cell--dim { opacity: .45; }
+
+/* Sat/Sun: grey surface + a quieter day number. Kept even when the day carries the
+   green/red inline tint — the tint wins visually, the class keeps the muted number. */
+.cal-cell--weekend { background: var(--line); }
+.cal-cell--weekend .cal-day { color: var(--muted); opacity: .7; }
 
 .cal-day {
   display: inline-flex;
@@ -1105,6 +1115,20 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   font-size: 11px;
 }
 
+/* income indicator under the trades line: "Interest", "Dividend", "Interest + Div"
+   (or "Income" for withholding/fees-only days) — teal, tiny, ellipsised like the
+   pnl/meta lines so a narrow cell never overflows */
+.cal-tag {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--teal-dark);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
 /* calendar-glyph picker (leads the bar, before ‹ ›): icon-only, same chrome as the nav buttons */
 .cal-nav--picker { display: inline-flex; align-items: center; justify-content: center; }
 .cal-nav--picker .icon { width: 15px; height: 15px; }
@@ -1122,12 +1146,10 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 #dailyCard,
 #dailyDetail { scroll-margin-top: 76px; }
 
-/* #dailyDetailTop — "Back to calendar" ghost button in the detail head; hidden
-   everywhere except phones / coarse pointers (app.js wires the scroll-back). */
-#dailyDetailTop { display: none; }
-@media (max-width: 620px), (pointer: coarse) {
-  #dailyDetailTop { display: inline-flex; align-items: center; justify-content: center; }
-}
+/* #dailyDetailTop — "Back to calendar" ghost button in the detail head; visible at
+   every width (desktop included) because the day click scrolls the detail card into
+   view on every viewport (app.js wires the scroll-back). */
+#dailyDetailTop { display: inline-flex; align-items: center; justify-content: center; }
 
 .cal-detail__heading {
   display: flex;

@@ -2,8 +2,8 @@
 
    Caches ONLY the static app shell allowlisted below. Everything else is left
    completely alone: /data/*, any *.csv (uploaded, dropped or fetched) and the
-   cross-origin USD/AUD FX lookups (frankfurter.dev, open.er-api.com,
-   cdn.jsdelivr.net) are never intercepted, never cached and never served from
+   cross-origin USD rate-map FX lookups (open.er-api.com, cdn.jsdelivr.net,
+   api.frankfurter.dev) are never intercepted, never cached and never served from
    here - statement data stays in the page and localStorage exactly as before.
 
    Strategy: network-first, falling back to the cached shell when offline;

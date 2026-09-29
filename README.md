@@ -132,11 +132,12 @@ spells out `Income $X = Interest $a + Div $b` (withholding/fees stay netted insi
 The legend's **Interest + Div** row carries a round **i** button (`#incomeInfo` → `#incomeHelp`).
 Hover or focus it for the definition — *Income = Interest + Dividends (plus Withholding + Fees
 netted)*. The **Net P&L** KPI delta carries the same `Income $X = Interest $a + Div $b` breakdown
-as a title. Both views convert at render time with the active USD/AUD switch.
+as a title. Both views convert at render time with the active display currency (USD default;
+AUD/CNY/SGD convert at the loaded rate — see *Currency* below).
 
 ### Interest tab
 
-The **Overview / Interest / Daily P&L** tabs above the content (deep-linkable as
+The **Overview / Interest / Daily P&L Calendar** tabs above the content (deep-linkable as
 `#overview` / `#interest` / `#daily`) switch views; the Interest tab renders four KPIs,
 a bar chart and a per-month table:
 
@@ -161,34 +162,40 @@ a bar chart and a per-month table:
   interest bucket in every view, not just this tab. A file with no Interest Accruals section falls
   back to posted interest and the toggle's tooltip explains why; the card's basis note reads
   `Posted basis` / `Accrual basis`.
-- **Currency.** The USD/AUD switch applies here like everywhere else: KPIs, bars, tooltips and the
-  table are converted at render time from the raw USD amounts (see *Currency* below).
+- **Currency.** The display-currency dropdown applies here like everywhere else: KPIs, bars,
+  tooltips and the table are converted at render time from the raw USD amounts (see *Currency* below).
 
-### Daily P&L tab
+### Daily P&L Calendar tab
 
 The third tab (deep-linkable as `#daily`) turns the same aggregation into a **daily calendar**:
 one cell per day, **Monday-first** (`M T W T F S S` — the weekday row and the grid maths share
 the same offset, so day 1 always lands in its real weekday column), with the month's net P&L in
 the head. The day grain is a true sibling
 of the month grain — the trade filter (include/exclude + per-kind scopes + the global asset
-radio), the cash categories, the **Posted / Accrual** walk and the USD/AUD conversion are the same
-code paths, so every row of days sums to the month row it belongs to.
+radio), the cash categories, the **Posted / Accrual** walk and the display-currency conversion
+are the same code paths, so every row of days sums to the month row it belongs to.
 
 - **Head.** The month name is the card title (`#dailyTitle`, e.g. *January 2026*) and the rounded
   pill (`#dailyPill`) reads `Monthly P&L: +$2,775.00` — `fmtMoney`, `+`/`−` and green/red like the
   month table.
-- **Cells.** Day number · the day's net P&L (`pos`/`neg`) · `N trade(s)`. Days with no activity stay
-  bare. A day's money total includes trade P&L and that day's cash buckets (interest, dividends,
-  withholding, fees), so a cash-only day shows money without a trade count. Below 620px the trade
-  count hides and the money switches to a compact, cents-free form sized for a 375px cell; a
-  value that would spill keeps its sign and magnitude but drops the `$` (`$420`, `$2k`, `-$13`,
+- **Cells.** Day number · the day's net P&L (`pos`/`neg`) · `N trade(s)` · an income tag. Days with
+  no activity stay bare. A day's money total includes trade P&L and that day's cash buckets (interest,
+  dividends, withholding, fees), so a cash-only day shows money without a trade count. Below 620px
+  the trade count hides and the money switches to a compact, cents-free form sized for a 375px cell;
+  a value that would spill keeps its sign and magnitude but drops the `$` (`$420`, `$2k`, `-$13`,
   then `1.7k`, `-617`, `-12k`). The full `fmtMoney` value stays in its `title`/`aria-label`.
-- **Heat tint.** Each in-month day with a non-zero total gets a green (or red) tint whose alpha
-  scales to the day's `|P&L|` against the largest day in the *shown month* (capped at a fixed
-  ceiling well below the text contrast) — deliberately theme-neutral, so it reads the same in
-  light and dark. Adjacent-month cells stay dimmed and are never tinted, so a neighbouring day's
-  bigger total can't bleed into the shown month's scale. (`aggregateByDay()` also returns a
-  file-wide `maxAbs` for callers that want one scale across months.)
+- **Income tag.** A day with cash rows renders a small teal `.cal-tag` under the trades line:
+  **Interest** (posted interest or an accrual split), **Dividend** (dividends + payment in lieu),
+  **Interest + Div** when both land that day, or **Income** for withholding/fees-only days. It is
+  included in the cell's `title`/`aria-label`, and a cash-only day keeps its tag and amount with no
+  trade count.
+- **Tint.** One flat green tint for any positive day (`rgba(72,187,120,.18)`) and one flat red tint
+  for any negative day (`rgba(245,101,101,.18)`) — no gradient, no scaling by magnitude, and
+  deliberately theme-neutral so it reads the same in light and dark. Adjacent-month cells stay dimmed
+  and are never tinted. **Weekends** (Sat/Sun) carry a grey `var(--line)` surface and a muted day
+  number; a weekend day with P&L or income keeps its green/red tint (the tint wins visually, the
+  weekend class stays). (`aggregateByDay()` still returns a file-wide `maxAbs` for callers that want
+  a scale across months, but the calendar no longer uses it.)
 - **Day detail.** Clicking (or **Enter** on) a cell selects it *and* opens the card below the
   calendar (`#dailyDetail`, hidden until a day is picked). The head carries the date
   (`Wed 14 Jan 2026`) and a `Day P&L` pill; the **Trades** group mirrors the drill-down columns
@@ -199,17 +206,17 @@ code paths, so every row of days sums to the month row it belongs to.
   and cash walk (`aggregateByDay().rows` is collected in the same pass as the day buckets), so
   **day total = trades net + income net = the clicked cell's total**, and income never counts as
   a trade: a cash-only day keeps its money and shows the trades group with *No trades this day.*,
-  a day with neither shows *No activity this day.*. On touch devices and phones (≤620px) picking
-  a day also scrolls the detail card into view below the sticky toolbar, and the card head then
-  carries an up-arrow **Back to calendar** button (shown at those widths only) that returns to
-  the calendar card with the selected cell re-focused — re-focusing never moves the viewport
-  itself (`preventScroll`), so touch only scrolls where it means to.
+  a day with neither shows *No activity this day.*. Picking a day scrolls the detail card into
+  view below the sticky toolbar on **every viewport** (desktop included), and the card head carries
+  an up-arrow **Back to calendar** button (shown at every width) that returns to the calendar card
+  with the selected cell re-focused — re-focusing never moves the viewport itself (`preventScroll`),
+  so the scroll only happens where it is meant to.
 - **Today & selection.** Today's day number carries a teal ring; clicking the same cell again
   (or pressing **Enter** twice) toggles the selection and the detail off. **Escape** clears it.
   Arrow keys walk the grid (← → by a day, ↑ ↓ by a week); every cell keeps a full
-  `title`/`aria-label` (`Monday, January 5, 2026 · $391.00 · 2 trades`), and focus returns to the
-  same cell after each re-render (without scrolling the viewport on touch — there the view
-  follows the detail card instead).
+  `title`/`aria-label` (`Monday, January 5, 2026 · $391.00 · 2 trades · Interest`), and focus returns to the
+  same cell after each re-render (without scrolling the viewport — the view follows the detail
+  card instead).
 - **Navigation.** `‹` / `›` step one month, crossing years while the year filter is *All years*;
   with a year selected they stop at that year's bounds and **Today** snaps back to the current
   month, clamped into the selected year (its latest month with data when today falls outside it).
@@ -305,37 +312,42 @@ mirror of Exclude, using the same case-insensitive root-symbol matching and pers
 
 ### Currency
 
-The **USD / AUD** switch converts every money figure at render time. Amounts stay raw USD in
-memory; nothing is rewritten.
+The toolbar's **Currency** dropdown converts every money figure at render time: **USD** (the
+default, 1:1), **AUD**, **CNY** and **SGD**. Amounts stay raw USD in memory; nothing is rewritten.
+The read-only **Rate** readout next to it shows the applied factor for the selected currency
+(`1 USD = 1.4254 AUD`); there is no manual rate entry any more.
 
-- **Automatic rate.** Loading a CSV kicks off a background rate lookup (a fresh override or cache
-  short-circuits it), and selecting AUD retries when no rate has resolved yet. Providers are tried
-  in order:
-  1. **frankfurter** — `frankfurter.dev` v2 rate endpoint (primary; `GET /v2/rate/USD/AUD`)
-  2. **er-api** — `open.er-api.com` v6 latest rates (fallback)
-  3. **currency-api** — `@fawazahmed0/currency-api` via `cdn.jsdelivr.net` (second fallback)
-- **Cache.** A successful rate is cached in `localStorage` under **`fx-audusd-v1`** for **12 hours**.
-  After that it is refreshed; if every provider fails, the newest cached rate is used as `(stale)`.
+- **Automatic rates.** Loading a CSV kicks off one background lookup of a **USD rate map** for
+  AUD, CNY and SGD; switching to a currency whose rate is still missing retries (non-blocking:
+  the dashboard renders first and patches the rate in when it arrives). Providers are tried in
+  order — each is a plain keyless `GET` of a fixed URL:
+  1. **er-api** — `open.er-api.com` v6 latest USD rates (whole map; primary)
+  2. **currency-api** — `@fawazahmed0/currency-api` via `cdn.jsdelivr.net` (map fallback)
+  3. **frankfurter** — `frankfurter.dev` v2 pair rates, one request per still-missing code:
+     `GET /v2/rate/USD/AUD`, `/USD/CNY`, `/USD/SGD`
+- **Cache.** A successful map is cached in `localStorage` under **`fx-usd-rates-v1`** for
+  **12 hours**. After that it is refreshed; if every provider fails, the newest cached map is used
+  as `(stale)`. Partial maps are fine — only the codes that are still missing fall through.
 - **Network hygiene.** Each lookup is a plain `GET` of the provider's fixed URL — **only currency
   codes are sent; your file, totals and statement data never leave the page and never appear in a
   URL**. The page is marked `Referrer: no-referrer`, requests use `cache: 'no-store'`, and an
   **`AbortController` 5-second timeout** caps each provider attempt.
-- **Manual override.** Entering a rate in **Rate USD/AUD** beats the automatic chain, is stored as
-  **`fx_override`**, and suppresses provider lookups entirely — **manual mode is zero-network**.
-  **Auto** clears the override and returns to the automatic chain.
-- **Offline.** With no override, no cache and no reachable provider, the app falls back to a baked
-  approximation of **1.423** USD→AUD (badge reads `FX: approximate`).
+- **Offline / all providers down.** Any currency without a fetched rate converts at its baked
+  approximation (**AUD 1.423, CNY 7.1, SGD 1.28** USD→currency); the badge then reads
+  `FX: approximate`.
 - **Badge.** The thin sticky footer always shows the applied source, the provider's rate date and
-  the exact rate (`FX: <source> · <date> · 1 USD=<rate> AUD`); hover or focus it for the full
-  provenance tooltip, which opens upward.
+  the exact rate for the selected currency (`FX: <source> · <date> · 1 USD=<rate> <CUR>`); hover
+  or focus it for the full provenance tooltip (provider chain, fetch time and every fetched rate),
+  which opens upward.
 - **Attribution.** The footer keeps the required rates attribution link to **Exchange Rate API**;
   no statement data is requested by or sent to it.
 
 ### Theme (light / dark / system)
 
-The toolbar's **Light / Dark / System** switch (next to USD/AUD) repaints the whole dashboard —
-all colours come from the `:root` token block in `styles.css`, so the dark theme is a token
-override, not a second stylesheet.
+The toolbar's **Light / Dark / System** switch — icon-only (sun / moon / monitor) and pinned to
+the **right end** of the toolbar row — repaints the whole dashboard. All colours come from the
+`:root` token block in `styles.css`, so the dark theme is a token override, not a second
+stylesheet.
 
 - **Live, no round-trip.** `app.js` stamps `data-theme="light|dark"` on `<html>`; `styles.css`
   switches ~20 tokens (surface, card, ink, muted, borders, shadows, chart line/grid, tooltip,
@@ -360,7 +372,7 @@ override, not a second stylesheet.
 
 - **No CDN, no fonts, no analytics.** The app is `index.html` + `styles.css` + `app.js` and nothing
   else; every asset is inline or local, and `file://` use makes zero requests. The **only** optional
-  outbound calls are the fixed-URL USD→AUD rate lookups described in *Currency* above — nothing else
+  outbound calls are the fixed-URL USD rate-map lookups described in *Currency* above — nothing else
   is ever requested, and your file is never uploaded. (The remaining `http` strings inside inline
   `data:` SVG URIs are XML namespaces, which are never fetched.)
 - **Data stays in the browser.** Parsed results are cached in `localStorage` under the key **`ibkr-v1`**
@@ -380,9 +392,9 @@ override, not a second stylesheet.
 
 | Path | Role |
 | --- | --- |
-| `index.html` | Markup contract: header, year select, month chips (drill-down card header), chart cards, tables, `#postedToggle`, `#tickerBtn` / `#includeMore` / `#tickerSearchClear` / `#tickerCount` / `#filterNote` / `#toTopTickers` / `#tickersToTop`, `#assetToggle` asset radios, `#fxInput` / `#fxReset` / `#fxBadge`, legend income popover `#incomeInfo` / `#incomeHelp`, `#clearBtn`, file input, CSV help `#csvHelpBtn` / `#heroCsvInfo` / `#csvHelpModal`, and the Daily P&L shell `#dailyTitle` / `#dailyPill` / `#dailyPickerBtn` / `#dailyPicker` / `#dailyPrev` / `#dailyNext` / `#dailyToday` / `#dailyGrid` / `#dailyDetail` (date + Day P&L pill + trades/income groups + the mobile `#dailyDetailTop`). |
+| `index.html` | Markup contract: header, year select, currency select, `#fxRate`, month chips (drill-down card header), chart cards, tables, `#postedToggle`, `#tickerBtn` / `#includeMore` / `#tickerSearchClear` / `#tickerCount` / `#filterNote` / `#toTopTickers` / `#tickersToTop`, `#assetToggle` asset radios, `#fxBadge`, icon-only `#themeToggle`, legend income popover `#incomeInfo` / `#incomeHelp`, `#clearBtn`, file input, CSV help `#csvHelpBtn` / `#heroCsvInfo` / `#csvHelpModal`, and the Daily P&L shell `#dailyTitle` / `#dailyPill` / `#dailyPickerBtn` / `#dailyPicker` / `#dailyPrev` / `#dailyNext` / `#dailyToday` / `#dailyGrid` / `#dailyDetail` (date + Day P&L pill + trades/income groups + `#dailyDetailTop`). |
 | `styles.css` | All styling and design tokens (CSS custom properties in `:root`); no external assets. |
-| `app.js` | CSV parser (Flex + Activity Statement), month + day aggregation (`aggregateByMonth` / `aggregateByDay`, the latter also returning the per-day detail `rows`), root-symbol include/exclude filter with per-kind scopes, session-only asset filter, USD/AUD rate chain, rendering (charts, tables, the Monday-first Daily P&L calendar with its day detail and month/year picker). Exposes `window.IBKR` for debugging. |
+| `app.js` | CSV parser (Flex + Activity Statement), month + day aggregation (`aggregateByMonth` / `aggregateByDay`, the latter also returning the per-day detail `rows`), root-symbol include/exclude filter with per-kind scopes, session-only asset filter, the USD rate-map chain (AUD/CNY/SGD), rendering (charts, tables, the Monday-first Daily P&L calendar with its flat tints, weekend styling, income tags, day detail and month/year picker). Exposes `window.IBKR` for debugging. |
 | `manifest.webmanifest` | PWA manifest (`start_url`/`scope`/`id` are `./` so the install works under the Pages sub-path). |
 | `sw.js` | Offline-shell service worker (`ibkr-shell-v3`): allowlisted shell files only, scope resolved from its own URL; never touches CSVs, `data/` or the FX lookups. |
 | `icons/` | PWA icons shipped with the app (`icon.svg`, 192/512, maskable-512, apple-touch-180) — tracked, unlike screengrabs. |
@@ -396,8 +408,8 @@ override, not a second stylesheet.
 ## 6. Verify it yourself
 
 ```bash
-# Expected outbound URLs only: the footer attribution link (index.html) and the three
-# fixed FX provider endpoints (app.js). No data, no query strings, no CSV content:
+# Expected outbound URLs only: the footer attribution link (index.html) and the fixed
+# FX provider endpoints (app.js). No data, no query strings, no CSV content:
 grep -rn "https://" README.md index.html
 grep -nE "https?://" app.js
 # → attribution + provider URLs only; every URL is a literal constant, and no user data
@@ -511,10 +523,11 @@ The repo is deployable as a static site — **code only, never data**.
   `localStorage`; there is no upload path.
 - **No telemetry.** No XHR, no `sendBeacon`, no `WebSocket`, no analytics, no external fonts or
   scripts (`grep -nE "XMLHttpRequest|sendBeacon|WebSocket|EventSource" app.js index.html` → empty).
-- **The only outbound requests are three fixed FX URLs** (frankfurter.dev, open.er-api.com,
-  jsdelivr currency-api), each a literal constant fetched with `cache: 'no-store'`; no query string
-  is ever built from your data. They are skipped entirely when you set a manual rate or use `file://`
-  with a cached/baked rate.
+- **The only outbound requests are the fixed FX endpoints** (open.er-api.com, jsdelivr
+  currency-api, frankfurter.dev — one map fetch plus at most one pair fetch per missing currency),
+  each a literal constant fetched with `cache: 'no-store'`; no query string is ever built from your
+  data. They are skipped entirely when a fresh cached map exists or with `file://` and a
+  cached/baked rate.
 - **The service worker is shell-only.** `/data/*`, `*.csv` and every cross-origin request fall
   through untouched (never intercepted, never cached, never served), so statement data cannot end up
   in CacheStorage either.

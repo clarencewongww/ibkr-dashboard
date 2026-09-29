@@ -8,18 +8,18 @@
  *   - Activity Statement CSV — Section,Kind,... rows (Trades / Dividends / ...)
  *
  * Zero dependencies; works from file:// via FileReader + localStorage. The only network
- * calls are the optional USD/AUD rate lookups (cached; a baked rate covers offline use).
+ * calls are the optional USD rate-map lookups (cached; baked rates cover offline use).
  * Every DOM lookup is optional, so the script survives if the shell HTML is missing.
  *
- * DOM contract (see index.html): fileInput dropZone yearSelect monthChips kpiNet
- * kpiMonth kpiAvg kpiBest chartSvg chartTip breakdownSvg breakdownTip monthlyBody
+ * DOM contract (see index.html): fileInput dropZone yearSelect currencySelect monthChips
+ * kpiNet kpiMonth kpiAvg kpiBest chartSvg chartTip breakdownSvg breakdownTip monthlyBody
  * drillBody drillTitle emptyState errorBox clearBtn postedToggle fileLabel,
  * includeChips tickerBtn toTopTickers tickersToTop filterNote tickerSearchClear
  * includeMore (the "+n" chip for chips the fixed cluster cannot show)
  * toolbarToggle (mobile Controls fold — class/aria/persisted state only)
- * fxBadge fxDetail fxInput fxReset csvHelpBtn csvHelpModal csvHelpClose
+ * fxRate (read-only toolbar rate) fxBadge fxDetail csvHelpBtn csvHelpModal csvHelpClose
  * heroCsvInfo heroCsvHelp (the hero subtitle "i" opens the same help dialog), plus
- * the optional input[name="currencyToggle"] USD/AUD switch, the interest card
+ * the interest card
  * (interestSvg interestTip kpiIntTotal kpiIntAvgDay kpiIntBest kpiIntShare
  * interestBody), incomeInfo incomeHelp (the breakdown legend .info/.info-tip pair),
  * the ticker picker (tickerModal assetToggle tickerSearch tickerCount tickerList
@@ -58,10 +58,19 @@ const INCLUDE_SCOPE_KEY = 'ibkr-include-scope-v1'; // { SYM: 'options'|'stock' }
 const EXCLUDE_SCOPE_KEY = 'ibkr-exclude-scope-v1'; // { SYM: 'options'|'stock' } — exclude only that leg kind
 const TOOLBAR_KEY = 'ibkr-toolbar-collapsed-v1';   // '1' while the mobile toolbar fold is collapsed
 const THEME_KEY = 'ibkr-theme-v1';                 // 'light' | 'dark' | 'system' (absent = system)
-const FX_KEYS = { cache: 'fx-audusd-v1', override: 'fx_override' };
-const FX_TTL_MS = 12 * 60 * 60 * 1000;   // fresh-cache window for the FX rate
+const FX_KEYS = { cache: 'fx-usd-rates-v1' }; // one USD rate map for AUD/CNY/SGD (no manual override)
+const FX_TTL_MS = 12 * 60 * 60 * 1000;   // fresh-cache window for the FX rate map
 const FX_TIMEOUT_MS = 5000;              // per-provider request timeout
-const FX_BAKED_RATE = 1.423;             // offline USD->AUD approximation
+/* Display currencies, all quoted from USD (USD itself is the 1:1 base). */
+const FX_CURRENCIES = ['AUD', 'CNY', 'SGD'];
+const CURRENCY_META = {
+  usd: { sym: '$', label: 'USD' },
+  aud: { sym: 'A$', label: 'AUD' },
+  cny: { sym: 'CN¥', label: 'CNY' },
+  sgd: { sym: 'S$', label: 'SGD' }
+};
+/* Offline approximations, labelled 'approximate' in the footer badge. */
+const FX_BAKED_RATES = { aud: 1.423, cny: 7.1, sgd: 1.28 };
 const FLEX_SECTIONS = ['TRNT', 'CTRN', 'CRTT', 'FIFO', 'CDIV', 'ACCT', 'IACC'];
 const FLEX_ROW_KINDS = ['HEADER', 'DATA'];
 const OPTION_ASSETS = new Set(['OPT', 'FOP', 'EQUITY AND INDEX OPTIONS', 'EQUITY_AND_INDEX_OPTIONS', 'INDEX OPTIONS', 'FUTURE OPTIONS', 'FUTURES OPTIONS', 'WAR', 'IOPT']);
@@ -122,27 +131,45 @@ const IBKR = (function () {
     const n = +String(key).slice(5, 7);
     return MONTH_NAMES[n - 1] ? MONTH_NAMES[n - 1] + ' ' + String(key).slice(0, 4) : String(key);
   }
-  /** 1 while displaying USD; state.fx.rate while displaying AUD. */
+  /** Lowercased display currency code ('usd'|'aud'|'cny'|'sgd'), or the active mode. */
+  function normalizeCurrency(currency) {
+    const v = String(currency == null ? '' : currency).trim().toLowerCase();
+    return Object.prototype.hasOwnProperty.call(CURRENCY_META, v) ? v : null;
+  }
+  /** Symbol prefix for a display currency ("$", "A$", "CN¥", "S$"). */
+  function currencySymbol(currency) {
+    const cur = normalizeCurrency(currency) || 'usd';
+    return CURRENCY_META[cur].sym;
+  }
+  /**
+   * USD -> display-currency factor. USD is 1; AUD/CNY/SGD come from the fetched
+   * state.fx.rates map, with the baked approximation covering the window before a
+   * lookup resolves (and every offline case). Rates map from USD, so one factor
+   * converts any raw amount.
+   */
   function fxRateFor(currency) {
-    if (currency !== 'aud') return 1;
-    const rate = Number(state.fx && state.fx.rate);
-    return isFinite(rate) && rate > 0 ? rate : 1;
+    const cur = normalizeCurrency(currency) || 'usd';
+    if (cur === 'usd') return 1;
+    const fetched = Number(state.fx && state.fx.rates && state.fx.rates[cur]);
+    if (isFinite(fetched) && fetched > 0) return fetched;
+    const baked = Number(FX_BAKED_RATES[cur]);
+    return isFinite(baked) && baked > 0 ? baked : 1;
   }
   /** Raw USD amount -> amount in the active display currency. */
   function disp(value) {
     return (Number(value) || 0) * fxRateFor(currencyMode());
   }
-  /** fmtMoney(value[, 'usd'|'aud']) — value is always raw USD; currency defaults to the active mode. */
+  /** fmtMoney(value[, 'usd'|'aud'|'cny'|'sgd']) — value is always raw USD; currency defaults to the active mode. */
   function fmtMoney(value, currency) {
-    const cur = currency === 'aud' || currency === 'usd' ? currency : currencyMode();
+    const cur = normalizeCurrency(currency) || currencyMode();
     const v = (Number(value) || 0) * fxRateFor(cur);
-    return (v < 0 ? '-' : '') + (cur === 'aud' ? 'A$' : '$') +
+    return (v < 0 ? '-' : '') + currencySymbol(cur) +
       Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
   function fmtCompact(value, currency) {
-    const cur = currency === 'aud' || currency === 'usd' ? currency : currencyMode();
+    const cur = normalizeCurrency(currency) || currencyMode();
     const n = (Number(value) || 0) * fxRateFor(cur);
-    const a = Math.abs(n), sym = cur === 'aud' ? 'A$' : '$';
+    const a = Math.abs(n), sym = currencySymbol(cur);
     if (a >= 1000) return (n < 0 ? '-' : '') + sym + (a / 1000).toFixed(a >= 10000 ? 0 : 1) + 'k';
     if (a === 0) return sym + '0';
     return (n < 0 ? '-' : '') + sym + Math.round(a);
@@ -156,9 +183,9 @@ const IBKR = (function () {
    * "$420" / "$2k" / "1.7k" / "-617" / "-$8k".
    */
   function fmtCellMoney(value, currency) {
-    const cur = currency === 'aud' || currency === 'usd' ? currency : currencyMode();
+    const cur = normalizeCurrency(currency) || currencyMode();
     const n = (Number(value) || 0) * fxRateFor(cur);
-    const a = Math.abs(n), sym = cur === 'aud' ? 'A$' : '$';
+    const a = Math.abs(n), sym = currencySymbol(cur);
     const sign = n < 0 ? '-' : '';
     let text;
     if (a >= 999.5) {
@@ -548,8 +575,9 @@ const IBKR = (function () {
    * Returns { byDay, maxAbs, monthTotals, rows }:
    *   byDay       — { 'yyyy-MM-dd': bucket }, buckets without a parseable day are dropped
    *   monthTotals — { 'yyyy-MM': sum of that month's day totals } (the calendar's pill maths)
-   *   maxAbs      — largest |day total| across the whole file (renderDaily scales its heat
-   *                 tint to the shown month's own max instead, so every month stays legible)
+   *   maxAbs      — largest |day total| across the whole file (the calendar now paints
+   *                 one flat tint per sign, so it no longer scales by this; kept for callers
+   *                 that want a single scale across months)
    *   rows        — { 'yyyy-MM-dd': { trades: [{symbol, asset, net, count}], income: [{label,
    *                 desc, amount}] } } — the day-detail itemisation, collected in the very same
    *                 pass as the buckets (same predicate, same accrual split), so the day total
@@ -646,8 +674,8 @@ const IBKR = (function () {
     excludeScope: {},            // { SYM: 'options'|'stock' } — skip only that leg kind (persisted)
     includeScope: {},            // { SYM: 'options'|'stock' } — keep only that leg kind (persisted)
     asset: 'all',                // global asset-class view filter all|options|stock (session only)
-    currency: 'usd',             // fallback when no currencyToggle input exists
-    fx: { rate: 1, fetchedAt: 0, source: 'usd', date: '' }
+    currency: 'usd',             // fallback when #currencySelect is absent; {@see currencyMode}
+    fx: { rates: {}, fetchedAt: 0, source: '', date: '' } // USD -> {aud,cny,sgd} rate map
   };
   const boundEvents = new WeakMap();
   let restoreTried = false;
@@ -661,8 +689,7 @@ const IBKR = (function () {
   const hasData = () => state.trades.length > 0 || state.cash.length > 0;
   /**
    * Touch-first device: coarse pointer or any touch points. Dialogs skip their
-   * auto-focus for it (no soft keyboard / select wheel without a user gesture) and
-   * the daily calendar opts into its phone-only scroll behaviours.
+   * auto-focus for it (no soft keyboard / select wheel without a user gesture).
    */
   function isCoarsePointer() {
     if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
@@ -738,16 +765,16 @@ const IBKR = (function () {
     if (checked) return String(checked.value || '').trim().toLowerCase() === 'accrual' ? 'accrual' : 'posted';
     return 'posted';
   }
-  /** 'aud' when the toggle says so (or state.currency does), otherwise 'usd'. */
+  /** The active display currency: #currencySelect's value, else state.currency ('usd' default). */
   function currencyMode() {
     if (typeof document !== 'undefined' && document.querySelector) {
-      const checked = document.querySelector('input[name="currencyToggle"]:checked');
-      if (checked) {
-        const v = String(checked.value || '').trim().toLowerCase();
-        if (v === 'aud' || v === 'usd') state.currency = v;
+      const sel = document.querySelector('#currencySelect');
+      if (sel) {
+        const v = normalizeCurrency(sel.value);
+        if (v) state.currency = v;
       }
     }
-    return state.currency === 'aud' ? 'aud' : 'usd';
+    return normalizeCurrency(state.currency) || 'usd';
   }
   function visibleKeys() {
     return Object.keys(state.months)
@@ -894,36 +921,35 @@ const IBKR = (function () {
     try { if (typeof localStorage !== 'undefined') localStorage.removeItem(key); } catch (err) { /* ignore */ }
   }
 
-  // USD -> AUD chain: manual override > fresh cache > providers > stale cache > baked rate.
+  /**
+   * USD rate-map chain: fresh cache > providers > stale cache > baked rates.
+   * Providers are all keyless fixed-URL GETs, tried in order; (a) and (b) return a
+   * whole map, (c) fills any still-missing code one pair at a time. No override and
+   * no query strings, so no statement data can ever ride along.
+   */
   const FX_PROVIDERS = [
     {
-      source: 'frankfurter', url: 'https://api.frankfurter.dev/v2/rate/USD/AUD',
-      pick: j => ({ rate: j && j.rate, payloadDate: j && j.date })
-    },
-    {
       source: 'er-api', url: 'https://open.er-api.com/v6/latest/USD',
-      pick: j => ({ rate: j && j.result === 'success' && j.rates ? j.rates.AUD : NaN, payloadDate: j && j.time_last_update_utc })
+      pick: j => (j && j.result === 'success' && j.rates)
+        ? { rates: pickFxRates(j.rates), date: j.time_last_update_utc || '' }
+        : null
     },
     {
-      source: 'fawazahmed0', url: 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.min.json',
-      pick: j => ({ rate: j && j.usd ? j.usd.aud : NaN, payloadDate: j && j.date })
+      source: 'currency-api', url: 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.min.json',
+      pick: j => (j && j.usd) ? { rates: pickFxRates(j.usd), date: j.date || '' } : null
     }
   ];
 
-  /** Manual override (plain number or {"rate":1.5,"date":"..."}) — wins and never hits the network. */
-  function readFxOverride() {
-    const raw = lsGet(FX_KEYS.override);
-    if (!raw) return null;
-    const s = String(raw).trim();
-    let rate = NaN, payloadDate = '';
-    try {
-      if (s.charAt(0) === '{') {
-        const o = JSON.parse(s) || {};
-        rate = Number(o.rate); payloadDate = String(o.date || o.payloadDate || '');
-      } else rate = Number(s);
-    } catch (err) { rate = Number(s); }
-    if (!isFinite(rate) || rate <= 0) return null;
-    return { rate, fetchedAt: Date.now(), source: 'manual', payloadDate };
+  /** Pull the AUD/CNY/SGD entries out of a provider map (either key case) as a lowercased {aud,cny,sgd}. */
+  function pickFxRates(obj) {
+    const out = {};
+    if (!obj) return out;
+    for (const code of FX_CURRENCIES) {
+      const raw = obj[code] != null ? obj[code] : obj[code.toLowerCase()];
+      const rate = Number(raw);
+      if (isFinite(rate) && rate > 0) out[code.toLowerCase()] = rate;
+    }
+    return out;
   }
 
   function readFxCache() {
@@ -931,11 +957,11 @@ const IBKR = (function () {
     if (!raw) return null;
     try {
       const o = JSON.parse(raw) || {};
-      const rate = Number(o.rate);
-      if (!isFinite(rate) || rate <= 0) return null;
+      const rates = pickFxRates(o.rates);
+      if (!Object.keys(rates).length) return null;
       return {
-        rate, fetchedAt: Number(o.fetchedAt) || 0,
-        source: String(o.source || 'cache'), payloadDate: String(o.payloadDate || o.date || '')
+        rates, fetchedAt: Number(o.fetchedAt) || 0,
+        source: String(o.source || 'cache'), date: String(o.date || '')
       };
     } catch (err) { return null; }
   }
@@ -943,15 +969,15 @@ const IBKR = (function () {
 
   function applyFx(fx) {
     state.fx = {
-      rate: fx.rate,
+      rates: fx.rates && typeof fx.rates === 'object' ? fx.rates : {},
       fetchedAt: fx.fetchedAt || Date.now(),
       source: fx.source || 'cache',
-      date: fx.payloadDate || ''
+      date: fx.date || ''
     };
     return state.fx;
   }
   function writeFxCache(fx) {
-    lsSet(FX_KEYS.cache, JSON.stringify({ rate: fx.rate, fetchedAt: fx.fetchedAt, source: fx.source, payloadDate: fx.payloadDate || '' }));
+    lsSet(FX_KEYS.cache, JSON.stringify({ rates: fx.rates, fetchedAt: fx.fetchedAt, source: fx.source, date: fx.date || '' }));
   }
 
   /** fetch() JSON with an AbortController timeout. */
@@ -968,44 +994,64 @@ const IBKR = (function () {
     }).then(json => { stop(); return json; }, err => { stop(); throw err; });
   }
 
-  async function fromProviders() {
+  /**
+   * Resolve the USD -> {aud,cny,sgd} rate map through the fallback chain and apply it
+   * to state.fx. A partial map is fine: every missing code stays on its baked
+   * approximation, and the badge says where the rest came from.
+   */
+  async function fetchFx(force) {
+    const cached = readFxCache();
+    if (cached && !force && fxFresh(cached)) return applyFx(cached);
+    const rates = {}, sources = [];
+    let date = '';
     for (const p of FX_PROVIDERS) {
+      if (Object.keys(rates).length >= FX_CURRENCIES.length) break;
       try {
-        const picked = p.pick(await fetchJson(p.url, FX_TIMEOUT_MS)) || {};
-        const rate = Number(picked.rate);
-        if (isFinite(rate) && rate > 0) {
-          return { rate, fetchedAt: Date.now(), source: p.source, payloadDate: String(picked.payloadDate || '') };
+        const picked = p.pick(await fetchJson(p.url, FX_TIMEOUT_MS));
+        if (!picked) continue;
+        let added = false;
+        for (const code of Object.keys(picked.rates)) {
+          if (rates[code] == null) { rates[code] = picked.rates[code]; added = true; }
+        }
+        if (added) {
+          if (sources.indexOf(p.source) < 0) sources.push(p.source);
+          if (!date && picked.date) date = picked.date;
         }
       } catch (err) { /* try the next provider */ }
     }
-    return null;
-  }
-
-  /** Resolve the USD/AUD rate through the fallback chain and apply it to state.fx. */
-  async function fetchFx(force) {
-    const override = readFxOverride();
-    if (override) return applyFx(override);
-    const cached = readFxCache();
-    if (cached && !force && fxFresh(cached)) return applyFx(cached);
-    const fresh = await fromProviders();
-    // a manual rate set while the network was in flight always wins (and suppresses refetch)
-    const manual = readFxOverride();
-    if (manual) return applyFx(manual);
-    if (fresh) { writeFxCache(fresh); return applyFx(fresh); }
-    if (cached) {
-      return applyFx({ rate: cached.rate, fetchedAt: cached.fetchedAt, source: (cached.source || 'cache') + ' (stale)', payloadDate: cached.payloadDate });
+    for (const code of FX_CURRENCIES) { // (c) per-currency frankfurter for whatever is still missing
+      const key = code.toLowerCase();
+      if (rates[key] != null) continue;
+      try {
+        const j = await fetchJson('https://api.frankfurter.dev/v2/rate/USD/' + code, FX_TIMEOUT_MS);
+        const raw = j && (j.rate != null ? j.rate : j.rates && j.rates[code]);
+        const rate = Number(raw);
+        if (isFinite(rate) && rate > 0) {
+          rates[key] = rate;
+          if (sources.indexOf('frankfurter') < 0) sources.push('frankfurter');
+          if (!date && j && j.date) date = j.date;
+        }
+      } catch (err) { /* fall through to the baked rate */ }
     }
-    return applyFx({ rate: FX_BAKED_RATE, fetchedAt: Date.now(), source: 'approximate', payloadDate: '' });
+    if (Object.keys(rates).length) {
+      const fresh = { rates, fetchedAt: Date.now(), source: sources.join('+') || 'provider', date };
+      writeFxCache(fresh);
+      return applyFx(fresh);
+    }
+    if (cached) {
+      return applyFx({ rates: cached.rates, fetchedAt: cached.fetchedAt, source: (cached.source || 'cache') + ' (stale)', date: cached.date });
+    }
+    return applyFx({ rates: Object.assign({}, FX_BAKED_RATES), fetchedAt: Date.now(), source: 'approximate', date: '' });
   }
 
   let fxInFlight = null;
   /**
-   * Non-blocking FX kickoff: an override/cache is applied synchronously so the next paint can
+   * Non-blocking FX kickoff: a cache is applied synchronously so the next paint can
    * convert, then renderAll() runs again once the network (or a fallback) resolves.
    */
   function resolveFxOnLoad(force) {
     if (fxInFlight) return fxInFlight;
-    const quick = readFxOverride() || readFxCache();
+    const quick = readFxCache();
     if (quick) applyFx(quick);
     fxInFlight = fetchFx(!!force)
       .then(fx => { renderAll(); return fx; })
@@ -1689,18 +1735,21 @@ const IBKR = (function () {
 
   /**
    * Daily P&L calendar (#dailyGrid): a Monday-first month grid of button.cal-cell rows —
-   * day number · fmtMoney(day total) · "N trades", with a green/red heat tint scaled to
-   * the shown month's largest |day total| (a file-wide max would flatten most months) and
-   * painted on in-month days only. Month title + Monthly P&L pill come from the same day
-   * buckets, so the pill always equals the month row's total.
+   * day number · fmtMoney(day total) · "N trades" · an income tag ("Interest" /
+   * "Dividend" / "Interest + Div") when the day has cash rows. One flat green tint for
+   * any positive day and one flat red tint for any negative day — no magnitude scaling
+   * — painted on in-month days only; Sat/Sun cells carry .cal-cell--weekend (grey
+   * surface, muted day number) and keep the tint when the day has P&L or income.
+   * Month title + Monthly P&L pill come from the same day buckets, so the pill always
+   * equals the month row's total.
    * States: .cal-cell--dim (adjacent month), .cal-cell--today (teal ring on the day
    * number), .cal-cell--sel (selected, white ring). Keyboard: arrows move focus, Enter
    * clicks (selects/toggles), Escape clears the selection. Nav ‹ › walk whole months,
    * bounded by the toolbar year filter (the shown ym is clamped into that year); the
    * calendar-glyph picker (#dailyPickerBtn) jumps straight to a month. A selected day
-   * also renders its detail panel below the grid (#dailyDetail); on touch/≤620px the
-   * click scrolls it under the sticky toolbar and #dailyDetailTop leads back to the grid.
-   * Every lookup is null-safe: shells without the card skip it entirely.
+   * also renders its detail panel below the grid (#dailyDetail); the click scrolls it
+   * under the sticky toolbar on every viewport and #dailyDetailTop leads back to the
+   * grid. Every lookup is null-safe: shells without the card skip it entirely.
    */
   function renderDaily(months) {
     const grid = byId('dailyGrid');
@@ -1752,10 +1801,6 @@ const IBKR = (function () {
     const monthDays = Object.keys(agg.byDay).filter(k => k.slice(0, 7) === ym);
     const monthTotal = monthDays.reduce((a, k) => a + agg.byDay[k].total, 0);
     const monthTrades = monthDays.reduce((a, k) => a + agg.byDay[k].count, 0);
-    // Heat scale: the shown month's largest |day total|. aggregateByDay().maxAbs spans
-    // the whole file, and scaling by it flattens every month but the file's biggest one
-    // to invisible alphas — the mock tints per month.
-    const maxAbs = monthDays.reduce((a, k) => Math.max(a, Math.abs(agg.byDay[k].total)), 0);
     if (pill) {
       pill.textContent = (monthTotal > 0 ? '+' : '') + fmtMoney(monthTotal);
       pill.className = ('num ' + (monthTotal > 0 ? 'pos' : monthTotal < 0 ? 'neg' : '')).trim();
@@ -1777,23 +1822,31 @@ const IBKR = (function () {
       const b = agg.byDay[c.key];
       const total = b ? b.total : 0;
       const count = b ? b.count : 0;
+      const incomeRows = (agg.rows[c.key] && agg.rows[c.key].income) || null;
+      const incomeSum = incomeRows ? incomeRows.reduce((a, r) => a + r.amount, 0) : 0;
+      const tag = dayIncomeTag(b, incomeRows);
       const classes = ['cal-cell'];
       if (!c.inMonth) classes.push('cal-cell--dim');
+      if (c.dow === 0 || c.dow === 6) classes.push('cal-cell--weekend');
       if (c.key === today) classes.push('cal-cell--today');
       if (c.key === state.daily.sel) classes.push('cal-cell--sel');
-      let tint = '';
-      // Adjacent-month cells are context only — they are dimmed and never tinted
-      // (their totals can also exceed the shown month's maxAbs and skew the scale).
-      if (c.inMonth && total !== 0 && maxAbs > 0) {
-        const alpha = Math.min(Math.abs(total) / maxAbs * 0.28, 0.28);
-        tint = ` style="background:rgba(${total > 0 ? '72,187,120' : '245,101,101'},${alpha.toFixed(3)})"`;
-      }
+      // Flat tint: one green alpha for any positive day, one red for any negative —
+      // no scaling by magnitude. Adjacent-month cells are context only and never
+      // tinted; a weekend day with P&L or income keeps the tint (it wins over the
+      // grey .cal-cell--weekend background, the class stays for the muted day number).
+      const tintBase = total !== 0 ? total : incomeSum;
+      const tinted = c.inMonth && tintBase !== 0;
+      const tint = tinted
+        ? ` style="background:rgba(${tintBase > 0 ? '72,187,120' : '245,101,101'},.18)"`
+        : '';
       const money = fmtMoney(total);
       const short = fmtCellMoney(total);
       const tradeText = count === 1 ? '1 trade' : count + ' trades';
-      // aria-label/title carry the full value: money always, trades only when there are any.
+      // aria-label/title carry the full value: money always, trades and the income
+      // tag only when the day has them.
       const label = `${WEEKDAY_NAMES[c.dow]}, ${MONTH_FULL[+c.key.slice(5, 7) - 1]} ${c.day}, ${c.key.slice(0, 4)} · ${money}` +
-        (count ? ` · ${tradeText}` : '');
+        (count ? ` · ${tradeText}` : '') +
+        (tag ? ` · ${tag}` : '');
       const pnlCls = total > 0 ? 'pos' : total < 0 ? 'neg' : '';
       // Two money spans: the full fmtMoney value everywhere, swapped for the
       // compact fmtCellMoney on narrow screens (styles.css), where a
@@ -1804,9 +1857,25 @@ const IBKR = (function () {
         (total !== 0 || count ? `<span class="cal-pnl cal-pnl--full ${pnlCls}">${money}</span>` +
           `<span class="cal-pnl cal-pnl--short ${pnlCls}" aria-hidden="true">${short}</span>` : '') +
         (count ? `<span class="cal-meta">${tradeText}</span>` : '') +
+        (tag ? `<span class="cal-tag" aria-hidden="true">${esc(tag)}</span>` : '') +
         `</button>`;
     }).join('');
     renderDailyDetail(agg);
+  }
+
+  /**
+   * Income tag for a calendar cell — "Interest" (interest rows / accrual splits),
+   * "Dividend" (dividends + payment in lieu), "Interest + Div" for both, or "Income"
+   * when only withholding/fees land that day. '' without income rows.
+   */
+  function dayIncomeTag(bucket, incomeRows) {
+    if (!bucket || !incomeRows || !incomeRows.length) return '';
+    const interest = Number(bucket.interest) !== 0;
+    const dividends = Number(bucket.dividends) !== 0;
+    if (interest && dividends) return 'Interest + Div';
+    if (interest) return 'Interest';
+    if (dividends) return 'Dividend';
+    return 'Income';
   }
 
   /** "Wed 14 Jan 2026" — the day-detail header for a 'yyyy-MM-dd' key. */
@@ -2097,7 +2166,7 @@ const IBKR = (function () {
     el.hidden = parts.length === 0;
   }
 
-  const FX_CHAIN = 'frankfurter→er-api→currency-api';
+  const FX_CHAIN = 'er-api→currency-api→frankfurter';
 
   /** "fetched 2026-09-26 04:12 UTC" for a provenance line (or a dash placeholder). */
   function fxFetchedText(ts) {
@@ -2107,16 +2176,48 @@ const IBKR = (function () {
       ? 'fetched ' + d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
       : 'fetched —';
   }
-  /** Human-readable provenance for the active rate — #fxBadge title + #fxDetail text. */
+  /** 4dp (2dp for big quotes) rate text, e.g. "1.4250" / "7.1000" / "104.25". */
+  function fxFmtRate(rate) {
+    const n = Number(rate);
+    if (!isFinite(n) || n <= 0) return '—';
+    return n >= 100 ? n.toFixed(2) : n.toFixed(4);
+  }
+  /** Lowercased codes with a fetched (not baked) rate, e.g. "AUD 1.4254, SGD 1.28". */
+  function fxKnownRatesText(fx) {
+    const rates = (fx && fx.rates) || {};
+    return FX_CURRENCIES
+      .map(code => code.toLowerCase())
+      .filter(key => Number(rates[key]) > 0)
+      .map(key => key.toUpperCase() + ' ' + fxFmtRate(rates[key]))
+      .join(', ');
+  }
+  /** Human-readable provenance for the applied rate — #fxBadge title + #fxDetail text. */
   function fxProvenance(fx) {
     const source = String(fx.source || '');
+    const cur = currencyMode();
+    const label = CURRENCY_META[cur].label;
+    const applied = `applied 1 USD=${fxFmtRate(fxRateFor(cur))} ${label}`;
     const payload = 'payload ' + (fx.date || '—');
     const fetched = fxFetchedText(fx.fetchedAt);
-    if (source === 'manual') return `manual override · ${payload} · ${fetched} · no network lookup`;
-    if (source === 'approximate') return `approximate · ${payload} · ${fetched} · baked ${FX_BAKED_RATE} USD→AUD (offline fallback)`;
-    if (/stale/i.test(source)) return `${source} · ${payload} · ${fetched} · cached rate re-used (providers unreachable)`;
-    if (source === 'cache' || source === 'cached') return `cached · ${payload} · ${fetched} · ${FX_CHAIN} (≤ ${Math.round(FX_TTL_MS / 3600000)} h old)`;
-    return `${source} · ${payload} · ${fetched} · ${FX_CHAIN}`;
+    const known = fxKnownRatesText(fx);
+    if (source === 'approximate') return `approximate · ${payload} · ${fetched} · baked ${applied.replace('applied ', '')} (no provider reachable) · chain ${FX_CHAIN}`;
+    if (/stale/i.test(source)) return `${source} · ${payload} · ${fetched} · cached rates re-used (providers unreachable)${known ? ' · ' + known : ''}`;
+    if (source === 'cache' || source === 'cached') return `cached · ${payload} · ${fetched} · chain ${FX_CHAIN} (≤ ${Math.round(FX_TTL_MS / 3600000)} h old)${known ? ' · ' + known : ''}`;
+    return `${source} · ${payload} · ${fetched} · chain ${FX_CHAIN} · ${applied}${known ? ' · ' + known : ''}`;
+  }
+
+  /** Toolbar read-only rate: "1 USD = 1.4254 AUD" for the selected currency. */
+  function renderFxRate() {
+    const el = byId('fxRate');
+    if (!el) return;
+    const cur = currencyMode();
+    const label = CURRENCY_META[cur].label;
+    el.textContent = '1 USD = ' + (cur === 'usd' ? '1' : fxFmtRate(fxRateFor(cur))) + ' ' + label;
+    const resolved = cur === 'usd' || Number(state.fx && state.fx.rates && state.fx.rates[cur]) > 0;
+    el.classList.toggle('fx-rate--approx', !resolved);
+    el.title = resolved
+      ? `Applied conversion rate for ${label} (from ${state.fx && state.fx.source ? state.fx.source : 'the rate cache'})`
+      : `Approximate baked rate for ${label} — automatic lookup still pending or offline`;
   }
 
   /** Footer FX badge: source label + payload date + rate; title/#fxDetail explain the fallback. */
@@ -2124,18 +2225,18 @@ const IBKR = (function () {
     const fx = state.fx || {};
     const badge = byId('fxBadge');
     const detail = byId('fxDetail');
-    if (!fx.source || fx.source === 'usd') { // no resolution yet
+    const cur = currencyMode();
+    const label = CURRENCY_META[cur].label;
+    if (!fx.source) { // no resolution yet
       setText('fxBadge', hasData() ? 'FX: loading' : 'FX: waiting for a CSV');
-      if (badge) badge.title = 'USD/AUD rate not resolved yet — the automatic lookup starts with the next CSV load.';
-      if (detail) detail.textContent = `${FX_CHAIN} (automatic) or a manual override`;
+      if (badge) badge.title = 'USD rates not resolved yet — the automatic lookup starts with the next CSV load.';
+      if (detail) detail.textContent = `${FX_CHAIN} — keyless fixed-URL GETs, no data sent`;
       return;
     }
-    let label = String(fx.source);
-    if (label === 'cache' || label === 'cached') label = 'cached';
-    const rate = Number(fx.rate);
-    const rateText = isFinite(rate) && rate > 0 ? String(Math.round(rate * 10000) / 10000) : '—';
+    let sourceLabel = String(fx.source);
+    if (sourceLabel === 'cache' || sourceLabel === 'cached') sourceLabel = 'cached';
     const date = fx.date ? ' · ' + fx.date : '';
-    setText('fxBadge', `FX: ${label}${date} · 1 USD=${rateText} AUD`);
+    setText('fxBadge', `FX: ${sourceLabel}${date} · 1 USD=${fxFmtRate(fxRateFor(cur))} ${label}`);
     const provenance = fxProvenance(fx);
     if (badge) badge.title = provenance;
     if (detail) detail.textContent = provenance;
@@ -2175,6 +2276,7 @@ const IBKR = (function () {
     renderFilterNote(); // first: the inline note's width is part of the row the '+n' clip measures
     renderIncludeChips();
     renderTickerCount();
+    renderFxRate();
     renderFxBadge();
     const empty = byId('emptyState');
     if (empty) {
@@ -2205,7 +2307,7 @@ const IBKR = (function () {
     } catch (err) { /* storage disabled or full — parsed result still renders */ }
     showError('');
     renderAll();
-    resolveFxOnLoad(); // render first, then patch in the resolved FX rate
+    resolveFxOnLoad(); // render first, then patch in the resolved USD rate map
   }
 
   function parseMaybeThrow(text, fileName) {
@@ -2996,15 +3098,15 @@ const IBKR = (function () {
     // freshly focused control into view); the phone scroll below owns the viewport.
     const again = byId('dailyGrid') && byId('dailyGrid').querySelector('.cal-cell[data-day="' + key + '"]');
     if (again && typeof again.focus === 'function') again.focus({ preventScroll: true });
-    // Touch / phone: bring the opened detail card under the sticky toolbar (its
-    // scroll-margin-top reserves the band). Keyboard users on desktop keep their view.
+    // Every viewport: bring the opened detail card under the sticky toolbar (its
+    // scroll-margin-top reserves the band). Keyboard focus already sits on the cell.
     const detail = byId('dailyDetail');
-    if (state.daily.sel && detail && !detail.hidden && (isCoarsePointer() || matchesMedia('(max-width: 620px)'))) {
+    if (state.daily.sel && detail && !detail.hidden) {
       scrollIntoViewSoft(detail, 'start');
     }
   }
   /**
-   * #dailyDetailTop ("Back to calendar", phones/touch only): return to the calendar card —
+   * #dailyDetailTop ("Back to calendar", all viewports): return to the calendar card —
    * focus the selected cell without scrolling, then bring #dailyCard under the sticky toolbar.
    */
   function onDailyDetailTop() {
@@ -3054,9 +3156,11 @@ const IBKR = (function () {
     if (t) showTipFor(t); else hideInterestTip();
   }
   function onInterestFocus(e) { const t = tipTarget(e); if (t) showTipFor(t); }
+  /** #currencySelect change: render with the rates already held, then fetch a missing one. */
   function onCurrencyChange() {
-    if (currencyMode() === 'aud' && state.fx.source === 'usd') resolveFxOnLoad();
+    const cur = currencyMode();
     renderAll();
+    if (cur !== 'usd' && !(Number(state.fx && state.fx.rates && state.fx.rates[cur]) > 0)) resolveFxOnLoad();
   }
   function onIncludeChipsClick(e) {
     const btn = e.target && e.target.closest ? e.target.closest('#includeChips button[data-ticker]') : null;
@@ -3184,32 +3288,6 @@ const IBKR = (function () {
     else lsRemove(TOOLBAR_KEY);
   }
 
-  function syncFxInput() {
-    const input = byId('fxInput');
-    if (!input || (typeof document !== 'undefined' && document.activeElement === input)) return;
-    const override = readFxOverride();
-    input.value = override ? String(override.rate) : '';
-  }
-  /** A manual rate wins over the automatic chain and suppresses the network lookup. */
-  function onFxInputChange() {
-    const input = byId('fxInput');
-    if (!input) return;
-    const raw = String(input.value || '').trim();
-    if (!raw) { onFxResetClick(); return; } // emptied box = back to automatic
-    const rate = parseFloat(raw.replace(/[,\s$]/g, ''));
-    if (!isFinite(rate) || rate <= 0) { syncFxInput(); return; }
-    lsSet(FX_KEYS.override, JSON.stringify({ rate, date: new Date().toISOString().slice(0, 10) }));
-    applyFx({ rate, fetchedAt: Date.now(), source: 'manual', payloadDate: '' });
-    renderAll();
-  }
-  function onFxResetClick() {
-    lsRemove(FX_KEYS.override);
-    const input = byId('fxInput');
-    if (input) input.value = '';
-    resolveFxOnLoad(true); // cache first, then a fresh provider lookup
-    renderAll();
-  }
-
   // ---------------------------------------------------------- install prompt
 
   /** Chromium's captured beforeinstallprompt (single-use); null once spent/hidden. */
@@ -3300,8 +3378,7 @@ const IBKR = (function () {
     listen(byId('incomeInfo'), 'mouseenter', placeIncomeTip);
     listen(byId('incomeInfo'), 'focusin', placeIncomeTip);
     if (typeof document !== 'undefined' && document.querySelectorAll) {
-      const toggles = document.querySelectorAll('input[name="currencyToggle"]');
-      for (let i = 0; i < toggles.length; i++) listen(toggles[i], 'change', onCurrencyChange);
+      listen(byId('currencySelect'), 'change', onCurrencyChange);
     }
     listen(byId('chartSvg'), 'mousemove', onChartMove);
     listen(byId('chartSvg'), 'mouseleave', hideTip);
@@ -3345,8 +3422,6 @@ const IBKR = (function () {
     }
     if (typeof window !== 'undefined') listen(window, 'hashchange', onHashChange);
     onHashChange(); // deep link (#interest, …) selects a tab on load
-    listen(byId('fxInput'), 'change', onFxInputChange);
-    listen(byId('fxReset'), 'click', onFxResetClick);
     listen(byId('fxBadge'), 'mouseenter', placeFxDetail);
     listen(byId('fxBadge'), 'focusin', placeFxDetail);
     // remeasure all four popovers on viewport changes (idempotent; hidden ones re-anchor)
@@ -3360,7 +3435,6 @@ const IBKR = (function () {
     // sync the radios/meta theme-color and attach the matchMedia listener while the
     // mode is 'system' (an OS flip then repaints without a reload)
     applyTheme(readThemeMode());
-    syncFxInput();
     const label = byId('fileLabel');
     if (label && !label.textContent.trim() && !hasData()) setFileLabel('No files selected');
   }
@@ -3385,7 +3459,7 @@ const IBKR = (function () {
     dayKey, aggregateByDay, renderDaily, renderDailyDetail, dayLabel,
     pickerYm, openDailyPicker,
     tradePasses, prepareTradeFilter, normalizeScope, scopeLabel,
-    fmtMoney, fmtCompact, disp, currencyMode, init, loadText, clearAll, renderAll, renderBreakdown, incomeOf, incomeTipText, state,
+    fmtMoney, fmtCompact, disp, currencyMode, currencySymbol, init, loadText, clearAll, renderAll, renderBreakdown, incomeOf, incomeTipText, state,
     getExclude, setExclude, getInclude, setInclude,
     getIncludeScope, setIncludeScope, getExcludeScope, setExcludeScope,
     getAssetFilter, setAssetFilter,
@@ -3393,7 +3467,7 @@ const IBKR = (function () {
     monthTipText, barTipText, renderInterest, rankedRoots,
     renderTickerList, applyTickerList, clearTickerList, openTickerList, closeTickerList, showTab,
     openCsvHelp, closeCsvHelp,
-    fx: { keys: FX_KEYS, baked: FX_BAKED_RATE, fetchFx, resolveFxOnLoad }
+    fx: { keys: FX_KEYS, baked: FX_BAKED_RATES, currencies: FX_CURRENCIES.slice(), fetchFx, resolveFxOnLoad, render: renderFxRate }
   };
 })();
 
