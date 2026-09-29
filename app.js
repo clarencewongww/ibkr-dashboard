@@ -17,6 +17,8 @@
  * includeChips tickerBtn toTopTickers tickersToTop filterNote tickerSearchClear
  * includeMore (the "+n" chip for chips the fixed cluster cannot show)
  * toolbarToggle (mobile Controls fold — class/aria/persisted state only)
+ * themeCycle (icon button: [data-mode] picks the sun/moon/monitor glyph; a click cycles
+ * light → dark → system and persists ibkr-theme-v1, the inline head script paints it first)
  * fxRate (read-only toolbar rate) fxBadge fxDetail csvHelpBtn csvHelpModal csvHelpClose
  * heroCsvInfo heroCsvHelp (the hero subtitle "i" opens the same help dialog), plus
  * the interest card
@@ -668,6 +670,7 @@ const IBKR = (function () {
 
   const state = {
     trades: [], cash: [], accruals: [], months: {}, year: 'all', month: 'all', name: '', format: '',
+    names: [],                    // file names in use; state.name is their comma-joined form (persisted)
     daily: { ym: null, sel: null }, // Daily P&L tab: shown 'yyyy-MM' + selected 'yyyy-MM-dd'
     exclude: [],                 // root symbols skipped during aggregation (persisted)
     include: [],                 // when non-empty, only these roots aggregate (persisted)
@@ -738,11 +741,33 @@ const IBKR = (function () {
     else box.textContent = message || '';
     box.hidden = !message;
   }
-  function setFileLabel(name) {
+  /** "a.csv, b.csv" → ['a.csv', 'b.csv'] (legacy state.name strings; [] when empty). */
+  function splitFileNames(name) {
+    const text = String(name == null ? '' : name).trim();
+    return text ? text.split(/\s*,\s*/).filter(Boolean) : [];
+  }
+  /** File-name list from a string | array | null (loadParsed/loadText accept either shape). */
+  function fileNamesOf(name) {
+    return (Array.isArray(name) ? name : [name]).map(n => String(n == null ? '' : n).trim()).filter(Boolean);
+  }
+  /**
+   * #fileLabel: one compact line — "Name.csv (cached)" for a single file,
+   * "3 files · First.csv +2" for several (styles.css ellipsises it in place, so it
+   * stays one line). title/aria-label always carry the full comma-separated list of
+   * names in use, so the clipped summary stays recoverable on hover / for AT. An
+   * empty list is the "No files selected" placeholder (fresh boot / clearAll).
+   */
+  function setFileLabel(names, cached) {
     const el = byId('fileLabel');
-    if (!el) return;
-    el.textContent = name;
-    el.title = name;
+    const list = fileNamesOf(names);
+    if (el) {
+      el.textContent = !list.length ? 'No files selected'
+        : list.length === 1 ? list[0] + (cached === true ? ' (cached)' : '')
+        : list.length + ' files · ' + list[0] + ' +' + (list.length - 1) + (cached === true ? ' (cached)' : '');
+      el.title = list.join(', ');
+      if (typeof el.setAttribute === 'function') el.setAttribute('aria-label', list.length ? list.join(', ') : 'No files selected');
+    }
+    return list;
   }
   /**
    * Idempotent listener binding: wire() may run twice (init + the late-shell load
@@ -2147,11 +2172,50 @@ const IBKR = (function () {
     more.setAttribute('aria-label', `${label} — open the ticker list`);
   }
 
+  /** Selector covering every #filterNote id a shell may use (base + tickerFilterNote alias). */
+  function filterNoteSelector() { return TICKER_IDS.note.map(id => '#' + id).join(', '); }
+
+  /**
+   * #filterNote tap-to-expand. The shell gives the <p> role="button" tabindex="0"
+   * aria-expanded="false" and styles.css un-clips `.filter-note.is-open`; this state
+   * pair is all app.js owns. Every helper is null-safe and idempotent: a shell without
+   * the note simply skips it.
+   */
+  function filterNoteEl() { return pickById(TICKER_IDS.note); }
+  function filterNoteOpen() {
+    const el = filterNoteEl();
+    return !!(el && el.classList && el.classList.contains('is-open'));
+  }
+  function setFilterNoteOpen(open) {
+    const el = filterNoteEl();
+    if (!el) return;
+    const next = open === true;
+    if (el.classList) el.classList.toggle('is-open', next);
+    if (typeof el.setAttribute === 'function') el.setAttribute('aria-expanded', next ? 'true' : 'false');
+  }
+  function toggleFilterNote() { setFilterNoteOpen(!filterNoteOpen()); }
+
+  /** #filterNote click — flip the expansion (clicks elsewhere collapse it in onDocumentClick). */
+  function onFilterNoteClick() { toggleFilterNote(); }
+
+  /**
+   * Enter/Space on the focused note. A <p role="button"> gets no synthetic click, so
+   * both keys are handled here — Space's default scroll is cancelled first.
+   */
+  function onFilterNoteKeydown(e) {
+    const key = e.key;
+    if (key !== 'Enter' && key !== ' ' && key !== 'Spacebar') return;
+    if (typeof e.preventDefault === 'function') e.preventDefault();
+    toggleFilterNote();
+  }
+
   /**
    * #filterNote — one-line summary of the active ticker filters, hidden while everything is
    * default: "Including only A (Options only), B · Excluding C (Stock only) · Stock only"
    * (the trailing clause is the global #assetToggle filter; empty clauses are omitted).
-   * .filter-note ellipsises, so title= carries the full string for hover/AT.
+   * .filter-note ellipsises, so title= carries the full string for hover/AT; tapping the
+   * note expands it in place (.is-open). A note that stays visible keeps its expanded
+   * state across re-renders; a hidden one is collapsed, since it can no longer be tapped.
    */
   function renderFilterNote() {
     const el = pickById(TICKER_IDS.note);
@@ -2164,6 +2228,7 @@ const IBKR = (function () {
     el.textContent = text;
     el.title = text;
     el.hidden = parts.length === 0;
+    if (!parts.length) setFilterNoteOpen(false);
   }
 
   const FX_CHAIN = 'er-api→currency-api→frankfurter';
@@ -2294,13 +2359,15 @@ const IBKR = (function () {
     state.cash = parsed.cash;
     state.accruals = parsed.accruals || [];
     state.format = parsed.format || '';
-    state.name = name || '';
+    state.names = fileNamesOf(name);
+    state.name = state.names.join(', ');
+    setFileLabel(state.names); // the compact one-line summary; readFiles already set it (idempotent)
     state.year = 'all';
     state.month = 'all';
     state.daily = { ym: null, sel: null };
     try {
       if (!bytes || bytes <= CACHE_MAX_BYTES) {
-        localStorage.setItem(CACHE_KEY, JSON.stringify({ v: 1, name: state.name, savedAt: new Date().toISOString(), parsed }));
+        localStorage.setItem(CACHE_KEY, JSON.stringify({ v: 1, name: state.name, names: state.names, savedAt: new Date().toISOString(), parsed }));
       } else {
         localStorage.removeItem(CACHE_KEY);
       }
@@ -2341,8 +2408,8 @@ const IBKR = (function () {
   function readFiles(fileList) {
     const files = Array.prototype.slice.call(fileList || []).filter(Boolean);
     if (!files.length) return;
-    const name = files.map(f => f.name).join(', ');
-    setFileLabel(name);
+    const names = files.map(f => f.name);
+    setFileLabel(names); // compact summary straight away; loadParsed keeps state in step
     Promise.all(files.map(readOne)).then(parts => {
       const merged = {
         format: parts.every(p => p.parsed.format === parts[0].parsed.format) ? parts[0].parsed.format : 'mixed',
@@ -2355,7 +2422,7 @@ const IBKR = (function () {
         merged.accruals = merged.accruals.concat(p.parsed.accruals);
         bytes += p.bytes;
       });
-      loadParsed(merged, name, bytes);
+      loadParsed(merged, names, bytes);
     }).catch(err => showError(err && err.message ? err.message : 'Could not read those files.'));
   }
 
@@ -2398,13 +2465,17 @@ const IBKR = (function () {
       state.accruals = Array.isArray(parsed.accruals) ? parsed.accruals : [];
       state.format = parsed.format || '';
       state.name = saved.name || 'cached';
-      setFileLabel(state.name + ' (cached)');
+      // Cache entries record the name list; v1 entries predate it, so recover the names by
+      // splitting the comma-joined name. Everything restored is, by definition, cached.
+      state.names = Array.isArray(saved.names) && saved.names.length ? fileNamesOf(saved.names) : splitFileNames(state.name);
+      if (!state.names.length) state.names = fileNamesOf(state.name);
+      setFileLabel(state.names, true);
     } catch (err) { /* corrupt cache — start empty */ }
   }
 
   function clearAll() {
     state.trades = []; state.cash = []; state.accruals = []; state.months = {};
-    state.year = 'all'; state.month = 'all'; state.name = ''; state.format = '';
+    state.year = 'all'; state.month = 'all'; state.name = ''; state.names = []; state.format = '';
     state.daily = { ym: null, sel: null };
     state.exclude = [];
     state.include = [];
@@ -2419,7 +2490,7 @@ const IBKR = (function () {
     lsRemove(EXCLUDE_SCOPE_KEY);
     const input = byId('fileInput');
     if (input) input.value = '';
-    setFileLabel('No files selected');
+    setFileLabel([]);
     showError('');
     renderAll();
     renderTickerList();
@@ -2756,6 +2827,7 @@ const IBKR = (function () {
   function onDocumentKeydown(e) {
     const key = e.key;
     if (key === 'Escape') {
+      setFilterNoteOpen(false); // collapse the expanded filter note (no-op when closed/absent)
       if (tickerFallbackOpen()) closeTickerList();
       if (csvHelpFallbackOpen()) closeCsvHelp();
       if (dailyPickerFallbackOpen()) closeDailyPicker();
@@ -2862,10 +2934,13 @@ const IBKR = (function () {
     if (typeof tabs[next].focus === 'function') tabs[next].focus();
   }
 
-  /** Document-level delegation: tab buttons and any ticker-picker opener. */
+  /** Document-level delegation: tab buttons, ticker-picker openers and the filter note. */
   function onDocumentClick(e) {
     const target = e.target;
     if (!target || !target.closest) return;
+    // #filterNote: its own click listener toggles, so any click that reaches the document
+    // (i.e. anywhere outside the note) collapses an expanded note.
+    if (filterNoteOpen() && !target.closest(filterNoteSelector())) setFilterNoteOpen(false);
     const tabBtn = target.closest('[data-tab], .tab, [role="tab"]');
     if (tabBtn) { showTab(tabKeyOf(tabBtn), false); return; }
     const openerSelector = '[data-open-tickers], ' + TICKER_IDS.openers.map(id => '#' + id).join(', ');
@@ -3203,21 +3278,34 @@ const IBKR = (function () {
     else if (!on && typeof current.removeListener === 'function') current.removeListener(onSystemThemeChange);
   }
 
-  /** Point the #themeToggle radios at the applied mode without firing events. */
-  function syncThemeToggle(mode) {
-    if (typeof document === 'undefined' || !document.querySelectorAll) return;
-    const radios = document.querySelectorAll('input[name="themeToggle"]');
-    for (let i = 0; i < radios.length; i++) radios[i].checked = radios[i].value === mode;
+  /** #themeCycle click order: each press moves one step right, wrapping back to light. */
+  const THEME_CYCLE = ['light', 'dark', 'system'];
+
+  /** The mode currently applied; applyTheme keeps it in step so a cycle starts from what's on screen. */
+  let activeThemeMode = 'system';
+
+  /**
+   * Point #themeCycle at the applied mode: [data-mode] is what styles.css keys the visible
+   * sun/moon/monitor glyph off, and title/aria-label name the mode for pointer/AT users.
+   * Null-safe: a shell without the button (or an older one) is simply skipped.
+   */
+  function syncThemeCycle(mode) {
+    const btn = byId('themeCycle');
+    if (!btn) return;
+    if (typeof btn.setAttribute === 'function') btn.setAttribute('data-mode', mode);
+    const label = 'Theme: ' + (mode === 'light' ? 'Light' : mode === 'dark' ? 'Dark' : 'System');
+    btn.title = label;
+    if (typeof btn.setAttribute === 'function') btn.setAttribute('aria-label', label);
   }
 
   /**
    * Apply 'light' | 'dark' | 'system': 'system' resolves against the OS, the
    * resolution is stamped as [data-theme] on <html> (styles.css's token switch),
-   * the meta theme-color follows the resolved background, the radios sync and the
+   * the meta theme-color follows the resolved background, the cycle button syncs and the
    * matchMedia subscription exists only while the mode is 'system' — an OS flip
    * then repaints live via onSystemThemeChange. The inline boot script in
    * index.html mirrors this resolution before the stylesheet paints, so a stored
-   * dark reload never flashes light. Persisting the pick is onThemeChange's job;
+   * dark reload never flashes light. Persisting the pick is onThemeCycle's job;
    * this function is also the restore/console entry point (window.IBKR.applyTheme).
    */
   function applyTheme(mode) {
@@ -3237,7 +3325,8 @@ const IBKR = (function () {
         listenThemeMq(themeMq, true);
       }
     }
-    syncThemeToggle(wanted);
+    activeThemeMode = wanted;
+    syncThemeCycle(wanted);
   }
 
   /** OS light/dark flip while the mode is 'system' — repaint immediately. */
@@ -3245,13 +3334,17 @@ const IBKR = (function () {
     if (readThemeMode() === 'system') applyTheme('system');
   }
 
-  /** #themeToggle radio change (radios bubble) — persist the pick, then apply it live. */
-  function onThemeChange() {
-    const checked = typeof document !== 'undefined' && document.querySelector
-      ? document.querySelector('input[name="themeToggle"]:checked') : null;
-    const mode = checked && (checked.value === 'light' || checked.value === 'dark') ? checked.value : 'system';
-    lsSet(THEME_KEY, mode); // 'system' is stored explicitly: it is a real choice, not an absence
-    applyTheme(mode);
+  /**
+   * #themeCycle click — advance Light → Dark → System → Light, persist the pick, then apply
+   * it live. The matchMedia listener follows automatically: applyTheme subscribes only while
+   * the new mode is 'system'. Keyboard needs no extra handler: a <button> fires click for
+   * Enter and Space natively.
+   */
+  function onThemeCycle() {
+    const from = THEME_CYCLE.indexOf(activeThemeMode);
+    const next = THEME_CYCLE[(from + 1) % THEME_CYCLE.length];
+    lsSet(THEME_KEY, next); // 'system' is stored explicitly: it is a real choice, not an absence
+    applyTheme(next);
   }
 
   // ------------------------------------------------------------ toolbar fold
@@ -3336,8 +3429,12 @@ const IBKR = (function () {
     listen(byId('dropZone'), 'click', onZoneClick);
     listen(byId('clearBtn'), 'click', clearAll);
     listen(byId('toolbarToggle'), 'click', onToolbarToggle);
-    // theme radios apply live (the inline boot script painted the stored pick already)
-    listen(byId('themeToggle'), 'change', onThemeChange);
+    // theme cycle button applies live (the inline boot script painted the stored pick already);
+    // Enter/Space need no handler — a real <button> fires click for both natively
+    listen(byId('themeCycle'), 'click', onThemeCycle);
+    // filter note tap-to-expand (the <p role="button"> gets no synthetic click, so keys are handled)
+    listen(pickById(TICKER_IDS.note), 'click', onFilterNoteClick);
+    listen(pickById(TICKER_IDS.note), 'keydown', onFilterNoteKeydown);
     // PWA install affordance (Chromium only; the button stays hidden elsewhere)
     listen(byId('installBtn'), 'click', onInstallClick);
     if (typeof window !== 'undefined') {
@@ -3432,11 +3529,11 @@ const IBKR = (function () {
     // restore the mobile fold from storage (class + aria only; never persisted here)
     applyToolbarCollapsed(lsGet(TOOLBAR_KEY) === '1');
     // theme: the inline boot script already painted the stored pick; re-apply it to
-    // sync the radios/meta theme-color and attach the matchMedia listener while the
-    // mode is 'system' (an OS flip then repaints without a reload)
+    // sync the cycle button's data-mode/meta theme-color and attach the matchMedia
+    // listener while the mode is 'system' (an OS flip then repaints without a reload)
     applyTheme(readThemeMode());
     const label = byId('fileLabel');
-    if (label && !label.textContent.trim() && !hasData()) setFileLabel('No files selected');
+    if (label && !label.textContent.trim() && !hasData()) setFileLabel([]);
   }
 
   function init() {
