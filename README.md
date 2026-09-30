@@ -345,11 +345,14 @@ The read-only **Rate** readout next to it shows the applied factor for the selec
 ### Theme (light / dark / system)
 
 The toolbar's **Light / Dark / System** switch — icon-only (sun / moon / monitor) — repaints the
-whole dashboard. From 1180px up it sits in flow at the **right end** of the toolbar row; at every
-wrapping width below that (iPad/phone, where the controls spill onto extra lines) it leaves the row
-and pins to the toolbar's **top-right corner** — with 56px of right padding reserved in the row so
-the first line of controls never slides under it — and it stays visible even when the mobile
-**Controls** fold hides the other controls. All colours come from the
+whole dashboard. It is pinned to the toolbar's **top-right corner at every width**: out of the
+wrapping control row (so it can never ride a later line or hop when the controls reflow),
+bottom-aligned with the first row's controls (its 16px top offset matches the label + control stack,
+and the **Controls** toggle reserves the same label row below 620px so even a one-toggle line
+aligns; the folded band shrinks to one 32px row and the offset drops to 0), and flush with the page
+gutter, so it lines up with the cards below. The row reserves the button's lane (38px button + 12px
+gap) in its right padding, so no control ever slides under it, and it stays visible even when the
+mobile **Controls** fold hides the other controls. All colours come from the
 `:root` token block in `styles.css`, so the dark theme is a token override, not a second
 stylesheet.
 

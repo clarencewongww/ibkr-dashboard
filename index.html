@@ -296,8 +296,9 @@
      flex-wraps at every width — one slim row while the controls fit, extra
      lines when they do not — so no control is ever clipped or hidden behind a
      scroller (.toolbar__inner). The theme button pins to the band's top-right
-     corner at every wrapping width (styles.css; in flow at the right end from
-     1180px up). Below 620px the first child (#toolbarToggle)
+     corner at every width (styles.css reserves its lane in the row's right
+     padding and bottom-aligns it with the first row). Below 620px the first
+     child (#toolbarToggle)
      folds the row behind one button (.toolbar.is-collapsed, persisted under
      ibkr-toolbar-collapsed-v1), which leaves the theme button visible; the
      Tickers ↑ shortcuts unfold it first. -->
@@ -409,11 +410,10 @@
     <!-- Theme cycle: one icon button cycling system → light → dark (system follows the
          OS, the markup default). All three 16px icons ride in the DOM and styles.css
          shows exactly the one matching data-mode; app.js owns data-mode plus the
-         aria-label/title ("Theme: …"). Last child of the row: from 1180px up
-         margin-left:auto parks it at the toolbar's right end; below 1180px styles.css
-         takes it out of flow and pins it to the band's top-right corner, where it
-         stays visible even while the <620px Controls fold hides its siblings. app.js
-         persists the pick under ibkr-theme-v1
+         aria-label/title ("Theme: …"). Pinned to the toolbar's top-right corner at
+         every width — out of the wrapping row, so it can never ride a later line —
+         where it stays visible even while the <620px Controls fold hides its
+         siblings. app.js persists the pick under ibkr-theme-v1
          and applies it to <html data-theme>; the inline boot script in <head> paints
          the stored pick before first paint. -->
     <button id="themeCycle" class="theme-cycle" type="button"

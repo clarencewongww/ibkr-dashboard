@@ -48,6 +48,8 @@
   --icon-slate: #4A5568;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --gap: 24px;
+  /* the page gutter shared by .container and the toolbar's theme-button corner */
+  --gutter: clamp(16px, 3vw, 32px);
 }
 
 /* ---------------------------------------------------------- theme: dark ---
@@ -204,7 +206,7 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
   width: 100%;
   max-width: 1440px;
   margin-inline: auto;
-  padding-inline: clamp(16px, 3vw, 32px);
+  padding-inline: var(--gutter);
 }
 
 .page {
@@ -595,6 +597,12 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 
 .toolbar .file-label { color: var(--muted); }
 
+/* The Load cluster is the widest control (button + info + filename + Clear). Cap
+   it at the row's content box — the max-content width would otherwise overflow a
+   very narrow row (sub-320px panels) and slide under the theme-button lane; the
+   filename ellipsises and the row wraps inside the cap. */
+.field--load { max-width: 100%; min-width: 0; }
+
 /* include tickers: the Tickers (n) modal button beside the applied chips, plus
    the "+n" #includeMore chip app.js shows when the cluster cannot hold them all.
    No-scrollbar, single-line contract — the row clips (overflow:hidden, never
@@ -748,13 +756,16 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 /* Theme cycle (#themeCycle): one icon button that cycles system → light → dark.
    All three 16px sun / moon / monitor SVGs ride in the DOM (.tc-icon) and CSS
    shows exactly the one matching the button's data-mode, so app.js only flips
-   the attribute and the "Theme: …" label/title. Placement: from 1180px up the
-   button stays in flow as #toolbarInner's last child and margin-left:auto parks
-   it flush right. Below 1180px (the widths where the row wraps) it leaves the
-   flow and pins to the band's top-right corner — .toolbar__inner is
-   position:relative, and its padding-right:56px in that query keeps the first
-   wrapped row clear of the button. It stays visible when the <620px Controls
-   fold hides the other children (the fold rule exempts .theme-cycle). */
+   the attribute and the "Theme: …" label/title. Placement: pinned to the band's
+   top-right corner at every viewport — never in the wrapped control flow, so it
+   can never ride a later row or hop when the controls reflow. .toolbar__inner
+   reserves its lane (the 38px button + the 12px row gap) in the right padding,
+   so no control ever slides under it, and top:16px bottom-aligns the 32px
+   button with the first row's controls (that row is label 12px + 4px gap +
+   control 32px, so its controls start 16px down); the folded <620px band
+   shrinks to one 32px row, where the query below drops the offset. It stays
+   visible when the fold hides the other children (the fold rule above exempts
+   .theme-cycle). */
 .theme-cycle {
   display: inline-flex;
   align-items: center;
@@ -787,25 +798,27 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
 .theme-cycle[data-mode="dark"] .tc-icon--moon,
 .theme-cycle[data-mode="system"] .tc-icon--monitor { display: block; }
 
-/* desktop: in flow, last child, pushed to the row's right end by the auto margin */
-@media (min-width: 1180px) {
-  .toolbar__inner > .theme-cycle { margin-left: auto; }
+/* the corner lane kept clear for the button: 38px button + 12px row gap on top
+   of the page gutter, so the wrapped control lines always stop short of it */
+.toolbar__inner { padding-right: calc(var(--gutter) + 50px); }
+
+.toolbar__inner > .theme-cycle {
+  position: absolute;
+  top: 16px;
+  right: var(--gutter);
+  z-index: 1;
 }
 
-/* wrapping widths (iPad/phone): out of the wrapped row's flow, pinned to the
-   toolbar's top-right corner. The inner's 56px right padding (≈ 12px inset +
-   the 38px button) reserves the corner so the first wrapped row's controls
-   never slide under it. It stays put when .is-collapsed hides the other
-   children (fold rule above), so the theme is always reachable. */
-@media (max-width: 1179px) {
-  .toolbar__inner { padding-right: 56px; }
-  .toolbar__inner > .theme-cycle {
-    position: absolute;
-    top: 0;
-    right: 12px;
-    z-index: 1;
-    margin-left: 0;
-  }
+@media (max-width: 619px) {
+  /* folded: the band's only row is the 32px Controls toggle, so the corner
+     button sits flush with it instead of offset for a label row */
+  .toolbar.is-collapsed .toolbar__inner > .theme-cycle { top: 0; }
+  /* expanded: the toggle reserves the label row's 16px with a top margin, so
+     even when it is alone on the first line (very narrow phones) that line is a
+     48px control row and the corner button — like the toggle — bottom-aligns
+     with it. With fields beside it the margin is visually a no-op (they already
+     set the 48px row). */
+  .toolbar:not(.is-collapsed) .toolbar__toggle { margin-top: 16px; }
 }
 
 /* ----------------------------------------------------------------- card --- */
