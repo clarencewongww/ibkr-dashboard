@@ -196,6 +196,21 @@ are the same code paths, so every row of days sums to the month row it belongs t
   number; a weekend day with P&L or income keeps its green/red tint (the tint wins visually, the
   weekend class stays). (`aggregateByDay()` still returns a file-wide `maxAbs` for callers that want
   a scale across months, but the calendar no longer uses it.)
+- **Export (PNG / PDF).** Two compact buttons beside the month title
+  (`#dailyExport` → `#dailyExportPng` / `#dailyExportPdf`) download the shown month as a picture or
+  a document — exactly the calendar plus its P&L breakdown, nothing else on the page:
+  - The render is the same data the grid shows: one shared pass (`dailyAggregate()`), the same day
+    buckets, flat tints, weekend surfaces, income tags and display-currency `fmtMoney` values, plus
+    the month's **Options / Stock / Interest / Dividends / Withholding / Fees / Net P&L** tiles (the
+    Stock tile carries its `incl. other stock` note when that bucket has rows) and a generated-on
+    footer. The palette is read live from the CSS tokens, so a dark-theme export is dark and a
+    light-theme one is light.
+  - **PNG** downloads `canvas.toBlob()` at 2x; **PDF** wraps the same canvas as a single
+    A4-landscape page around one image XObject — raw RGB with `/FlateDecode` (crisp text) or a JPEG
+    `/DCTDecode` fallback when `CompressionStream` is unavailable. Both files are assembled by hand:
+    no library, no network, nothing leaves the page.
+  - The buttons disable while a render is in flight, the visually-hidden `#dailyExportStatus` live
+    region announces the download (or the failure), and without data the cluster stays hidden.
 - **Day detail.** Clicking (or **Enter** on) a cell selects it *and* opens the card below the
   calendar (`#dailyDetail`, hidden until a day is picked). The head carries the date
   (`Wed 14 Jan 2026`) and a `Day P&L` pill; the **Trades** group mirrors the drill-down columns
@@ -231,7 +246,8 @@ are the same code paths, so every row of days sums to the month row it belongs t
   picker, and focus returns to the opener.
   The calendar shows days even where the file has no rows yet, so navigating past the last month
   is a normal empty month, not an error. Months outside the shown one are dimmed.
-- **Empty.** Until a CSV is loaded the card keeps the placeholder and hides the weekday row.
+- **Empty.** Until a CSV is loaded the card keeps the placeholder, hides the weekday row and keeps
+  the PNG / PDF export cluster hidden.
 
 ### Exclude
 
@@ -399,9 +415,9 @@ stylesheet.
 
 | Path | Role |
 | --- | --- |
-| `index.html` | Markup contract: header, year select, currency select, `#fxRate`, month chips (drill-down card header), chart cards, tables, `#postedToggle`, `#tickerBtn` / `#includeMore` / `#tickerSearchClear` / `#tickerCount` / `#filterNote` / `#toTopTickers` / `#tickersToTop`, `#assetToggle` asset radios, `#fxBadge`, icon-only `#themeToggle`, legend income popover `#incomeInfo` / `#incomeHelp`, `#clearBtn`, file input, CSV help `#csvHelpBtn` / `#heroCsvInfo` / `#csvHelpModal`, and the Daily P&L shell `#dailyTitle` / `#dailyPill` / `#dailyPickerBtn` / `#dailyPicker` / `#dailyPrev` / `#dailyNext` / `#dailyToday` / `#dailyGrid` / `#dailyDetail` (date + Day P&L pill + trades/income groups + `#dailyDetailTop`). |
+| `index.html` | Markup contract: header, year select, currency select, `#fxRate`, month chips (drill-down card header), chart cards, tables, `#postedToggle`, `#tickerBtn` / `#includeMore` / `#tickerSearchClear` / `#tickerCount` / `#filterNote` / `#toTopTickers` / `#tickersToTop`, `#assetToggle` asset radios, `#fxBadge`, icon-only `#themeToggle`, legend income popover `#incomeInfo` / `#incomeHelp`, `#clearBtn`, file input, CSV help `#csvHelpBtn` / `#heroCsvInfo` / `#csvHelpModal`, and the Daily P&L shell `#dailyTitle` / `#dailyPill` / `#dailyExport` (`#dailyExportPng` / `#dailyExportPdf` + `#dailyExportStatus`) / `#dailyPickerBtn` / `#dailyPicker` / `#dailyPrev` / `#dailyNext` / `#dailyToday` / `#dailyGrid` / `#dailyDetail` (date + Day P&L pill + trades/income groups + `#dailyDetailTop`). |
 | `styles.css` | All styling and design tokens (CSS custom properties in `:root`); no external assets. |
-| `app.js` | CSV parser (Flex + Activity Statement), month + day aggregation (`aggregateByMonth` / `aggregateByDay`, the latter also returning the per-day detail `rows`), root-symbol include/exclude filter with per-kind scopes, session-only asset filter, the USD rate-map chain (AUD/CNY/SGD), rendering (charts, tables, the Monday-first Daily P&L calendar with its flat tints, weekend styling, income tags, day detail and month/year picker). Exposes `window.IBKR` for debugging. |
+| `app.js` | CSV parser (Flex + Activity Statement), month + day aggregation (`aggregateByMonth` / `aggregateByDay`, the latter also returning the per-day detail `rows`), root-symbol include/exclude filter with per-kind scopes, session-only asset filter, the USD rate-map chain (AUD/CNY/SGD), rendering (charts, tables, the Monday-first Daily P&L calendar with its flat tints, weekend styling, income tags, day detail, month/year picker and the PNG/PDF calendar export — canvas renderer plus a hand-rolled minimal PDF writer). Exposes `window.IBKR` for debugging. |
 | `manifest.webmanifest` | PWA manifest (`start_url`/`scope`/`id` are `./` so the install works under the Pages sub-path). |
 | `sw.js` | Offline-shell service worker (`ibkr-shell-v3`): allowlisted shell files only, scope resolved from its own URL; never touches CSVs, `data/` or the FX lookups. |
 | `icons/` | PWA icons shipped with the app (`icon.svg`, 192/512, maskable-512, apple-touch-180) — tracked, unlike screengrabs. |

@@ -23,7 +23,9 @@
  * heroCsvInfo heroCsvHelp (the hero subtitle "i" opens the same help dialog), plus
  * the interest card
  * (interestSvg interestTip kpiIntTotal kpiIntAvgDay kpiIntBest kpiIntShare
- * interestBody), incomeInfo incomeHelp (the breakdown legend .info/.info-tip pair),
+ * interestBody), the daily calendar (dailyGrid dailyTitle dailyPill dailyDetail
+ * plus the dailyExport PNG/PDF cluster and its dailyExportStatus live region),
+ * incomeInfo incomeHelp (the breakdown legend .info/.info-tip pair),
  * the ticker picker (tickerModal assetToggle tickerSearch tickerCount tickerList
  * tickerApply tickerClear — per-symbol scope selects plus the global asset toggle)
  * and the [data-tab]-driven Overview/Interest tabs. All of those are optional:
@@ -1767,7 +1769,9 @@ const IBKR = (function () {
    * — painted on in-month days only; Sat/Sun cells carry .cal-cell--weekend (grey
    * surface, muted day number) and keep the tint when the day has P&L or income.
    * Month title + Monthly P&L pill come from the same day buckets, so the pill always
-   * equals the month row's total.
+   * equals the month row's total. The same buckets feed the head's PNG / PDF export
+   * cluster (#dailyExport, beside the title), which is revealed here as soon as the
+   * file has any data and retired again when it does not.
    * States: .cal-cell--dim (adjacent month), .cal-cell--today (teal ring on the day
    * number), .cal-cell--sel (selected, white ring). Keyboard: arrows move focus, Enter
    * clicks (selects/toggles), Escape clears the selection. Nav ‹ › walk whole months,
@@ -1784,13 +1788,7 @@ const IBKR = (function () {
     const detail = byId('dailyDetail');
     if (!grid && !title && !pill && !detail) return;
 
-    const useAccrual = interestMode() === 'accrual' && state.accruals.length > 0;
-    const agg = aggregateByDay(state.trades, state.cash, {
-      interestMode: useAccrual ? 'accrual' : 'posted', accruals: state.accruals,
-      include: state.include, exclude: state.exclude,
-      includeScope: state.includeScope, excludeScope: state.excludeScope,
-      globalAsset: state.asset
-    });
+    const { agg, accrual: useAccrual } = dailyAggregate();
 
     const available = (months && Object.keys(months).length ? Object.keys(months) : Object.keys(agg.monthTotals)).sort();
     // Year filter: the calendar is clamped inside the selected year, so a stale ym,
@@ -1811,17 +1809,15 @@ const IBKR = (function () {
       if (title) title.textContent = 'Daily P&L';
       if (pill) { pill.textContent = '—'; pill.className = 'num'; pill.removeAttribute('title'); }
       if (grid) grid.innerHTML = '';
+      setDailyExportEnabled(false);
       renderDailyDetail(agg);
       return;
     }
 
     const ym = state.daily.ym;
-    const first = Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7) - 1, 1);
-    // Monday-first: JS dows are Sun=0..Sat=6, so Mon=1 -> column 0 and Sun=0 -> column 6.
-    const lead = (new Date(first).getUTCDay() + 6) % 7;
-    const weeks = Math.ceil((lead + daysInMonth(ym)) / 7); // 4..6 rows, 42 cells max
-    const start = first - lead * 86400000;
+    const { weeks, cells } = monthCalendarCells(ym); // 4..6 rows, 42 cells max
     const today = new Date().toISOString().slice(0, 10);
+    setDailyExportEnabled(true);
 
     if (title) title.textContent = fullMonthLabel(ym);
     const monthDays = Object.keys(agg.byDay).filter(k => k.slice(0, 7) === ym);
@@ -1834,12 +1830,6 @@ const IBKR = (function () {
     }
     if (!grid) { renderDailyDetail(agg); return; }
 
-    const cells = [];
-    for (let i = 0; i < weeks * 7; i++) {
-      const d = new Date(start + i * 86400000);
-      const key = d.toISOString().slice(0, 10);
-      cells.push({ key, day: d.getUTCDate(), dow: d.getUTCDay(), inMonth: key.slice(0, 7) === ym });
-    }
     // Roving tabindex: the selected day, else today, else the 1st of the month.
     const roving = state.daily.sel && cells.some(c => c.key === state.daily.sel) ? state.daily.sel
       : cells.some(c => c.key === today) ? today
@@ -2002,6 +1992,509 @@ const IBKR = (function () {
         `<td>${esc(r.label)}</td><td>${esc(r.desc)}</td>` +
         `<td class="num ${moneyCls(r.amount)}">${money}</td></tr>`;
     }).join('');
+  }
+
+  // ------------------------------------------------- daily calendar export
+
+  /**
+   * One aggregate pass for the Daily tab — the calendar grid, the day-detail
+   * panel and the export all share it, so the basis (posted/accrual), ticker
+   * filters and accrual walk are exactly what is on screen.
+   */
+  function dailyAggregate() {
+    const accrual = interestMode() === 'accrual' && state.accruals.length > 0;
+    const agg = aggregateByDay(state.trades, state.cash, {
+      interestMode: accrual ? 'accrual' : 'posted', accruals: state.accruals,
+      include: state.include, exclude: state.exclude,
+      includeScope: state.includeScope, excludeScope: state.excludeScope,
+      globalAsset: state.asset
+    });
+    return { agg, accrual };
+  }
+
+  /**
+   * Monday-first month grid skeleton for a 'yyyy-MM': 4..6 weeks of
+   * { key, day, dow, inMonth } (Mon = column 0, Sun = column 6). Shared by the
+   * on-screen calendar and the export renderer so the two can never disagree.
+   */
+  function monthCalendarCells(ym) {
+    const first = Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7) - 1, 1);
+    const lead = (new Date(first).getUTCDay() + 6) % 7; // JS Sun=0 -> Mon-first column 0
+    const weeks = Math.ceil((lead + daysInMonth(ym)) / 7); // 42 cells max
+    const start = first - lead * 86400000;
+    const cells = [];
+    for (let i = 0; i < weeks * 7; i++) {
+      const d = new Date(start + i * 86400000);
+      const key = d.toISOString().slice(0, 10);
+      cells.push({ key, day: d.getUTCDate(), dow: d.getUTCDay(), inMonth: key.slice(0, 7) === ym });
+    }
+    return { weeks, cells };
+  }
+
+  /** Reveal/retire the #dailyExport cluster — only while the file has any data. */
+  function setDailyExportEnabled(on) {
+    const box = byId('dailyExport');
+    if (box) box.hidden = !on;
+  }
+
+  /** The month's category totals, summed from the same day buckets the grid paints. */
+  function monthCalendarTotals(agg, ym) {
+    const totals = { options: 0, assign: 0, otherStock: 0, otherStockCount: 0, interest: 0, dividends: 0, withholding: 0, fees: 0, count: 0, total: 0 };
+    for (const key of Object.keys(agg.byDay)) {
+      if (key.slice(0, 7) !== ym) continue;
+      const b = agg.byDay[key];
+      totals.options += b.options; totals.assign += b.assign;
+      totals.otherStock += b.otherStock; totals.otherStockCount += b.otherStockCount;
+      totals.interest += b.interest; totals.dividends += b.dividends;
+      totals.withholding += b.withholding; totals.fees += b.fees;
+      totals.count += b.count; totals.total += b.total;
+    }
+    return totals;
+  }
+
+  /**
+   * Canvas palette read live from the stylesheet tokens, so a dark-theme export
+   * exports dark. Falls back to the light palette when computed styles are
+   * absent (the module also runs under Node; the renderer itself is DOM-only).
+   */
+  function exportTokens() {
+    const light = {
+      card: '#ffffff', surface: '#F7FAFC', ink: '#1f2733', muted: '#A0AEC0',
+      border: '#E2E8F0', line: '#EDF2F7', teal: '#4FD1C5', tealDark: '#319795',
+      tealTint: 'rgba(79, 209, 197, .16)', green: '#48BB78', red: '#F56565',
+      font: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
+    };
+    if (typeof document === 'undefined' || !document.documentElement || typeof getComputedStyle !== 'function') return light;
+    const cs = getComputedStyle(document.documentElement);
+    const get = function (name, fallback) {
+      const value = cs.getPropertyValue(name);
+      return value && value.trim() ? value.trim() : fallback;
+    };
+    return {
+      card: get('--card', light.card),
+      surface: get('--surface', light.surface),
+      ink: get('--ink', light.ink),
+      muted: get('--muted', light.muted),
+      border: get('--border', light.border),
+      line: get('--line', light.line),
+      teal: get('--teal', light.teal),
+      tealDark: get('--teal-dark', light.tealDark),
+      tealTint: get('--teal-tint', light.tealTint),
+      green: get('--green', light.green),
+      red: get('--red', light.red),
+      font: get('--font', light.font)
+    };
+  }
+
+  /** Rounded-rect path (standalone of ctx.roundRect, which older engines lack). */
+  function roundRectPath(ctx, x, y, w, h, r) {
+    const rad = Math.max(0, Math.min(r, w / 2, h / 2));
+    ctx.beginPath();
+    ctx.moveTo(x + rad, y);
+    ctx.lineTo(x + w - rad, y);
+    ctx.arcTo(x + w, y, x + w, y + rad, rad);
+    ctx.lineTo(x + w, y + h - rad);
+    ctx.arcTo(x + w, y + h, x + w - rad, y + h, rad);
+    ctx.lineTo(x + rad, y + h);
+    ctx.arcTo(x, y + h, x, y + h - rad, rad);
+    ctx.lineTo(x, y + rad);
+    ctx.arcTo(x, y, x + rad, y, rad);
+    ctx.closePath();
+  }
+
+  const EXPORT_SCALE = 2; // 2x canvases stay crisp on screen and in print
+  /* Cell tint alphas: byte-for-byte the grid's inline background rgba(). */
+  const CELL_TINT_POS = 'rgba(72,187,120,.18)';
+  const CELL_TINT_NEG = 'rgba(245,101,101,.18)';
+
+  /** The header's "Monthly P&L: +$2,775.00" pill (surface fill, border, coloured net). */
+  function drawExportPill(ctx, tokens, right, top, total) {
+    const font = tokens.font;
+    const value = (total > 0 ? '+' : '') + fmtMoney(total);
+    ctx.font = '500 13.5px ' + font;
+    const labelW = ctx.measureText('Monthly P&L:').width;
+    ctx.font = '700 17px ' + font;
+    const valueW = ctx.measureText(value).width;
+    const h = 46, w = labelW + 10 + valueW + 46; // 18px insets beside the label/value pair
+    const x = right - w;
+    roundRectPath(ctx, x, top, w, h, h / 2);
+    ctx.fillStyle = tokens.surface;
+    ctx.fill();
+    ctx.strokeStyle = tokens.border;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = tokens.muted;
+    ctx.font = '500 13.5px ' + font;
+    ctx.fillText('Monthly P&L:', x + 18, top + h / 2 + 1);
+    ctx.fillStyle = total > 0 ? tokens.green : total < 0 ? tokens.red : tokens.ink;
+    ctx.font = '700 17px ' + font;
+    ctx.fillText(value, x + 18 + labelW + 10, top + h / 2 + 1);
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  /**
+   * One export cell, mirroring the grid's rules: adjacent-month cells dimmed
+   * (opacity .45), weekends on the grey .cal-cell--weekend surface, one flat
+   * tint for any positive/negative day (never scaled, never on adjacent
+   * months), day number · full fmtMoney · "N trades · tag".
+   */
+  function drawExportCell(ctx, tokens, agg, c, x, y, w, h) {
+    const font = tokens.font;
+    const bucket = agg.byDay[c.key];
+    const total = bucket ? bucket.total : 0;
+    const count = bucket ? bucket.count : 0;
+    const incomeRows = (agg.rows[c.key] && agg.rows[c.key].income) || null;
+    const incomeSum = incomeRows ? incomeRows.reduce(function (a, r) { return a + r.amount; }, 0) : 0;
+    const tag = dayIncomeTag(bucket, incomeRows);
+    const weekend = c.dow === 0 || c.dow === 6;
+    const tintBase = total !== 0 ? total : incomeSum;
+    const tinted = c.inMonth && tintBase !== 0;
+
+    ctx.save();
+    if (!c.inMonth) ctx.globalAlpha = 0.45;
+    roundRectPath(ctx, x, y, w, h, 8);
+    ctx.fillStyle = weekend && !tinted ? tokens.line : tokens.card;
+    ctx.fill();
+    if (tinted) {
+      ctx.fillStyle = tintBase > 0 ? CELL_TINT_POS : CELL_TINT_NEG;
+      ctx.fill();
+    }
+    ctx.strokeStyle = tokens.border;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = tokens.muted;
+    ctx.font = '600 13px ' + font;
+    ctx.fillText(String(c.day), x + 12, y + 24);
+
+    if (total !== 0 || count) {
+      ctx.fillStyle = total > 0 ? tokens.green : total < 0 ? tokens.red : tokens.ink;
+      ctx.font = '700 14.5px ' + font;
+      ctx.fillText(fmtMoney(total), x + 12, y + 50);
+    }
+
+    if (count || tag) {
+      const metaY = y + h - 16;
+      let mx = x + 12;
+      if (count) {
+        ctx.fillStyle = tokens.muted;
+        ctx.font = '500 11px ' + font;
+        const text = count === 1 ? '1 trade' : count + ' trades';
+        ctx.fillText(text, mx, metaY);
+        mx += ctx.measureText(text).width + 3;
+      }
+      if (tag) {
+        if (count) {
+          ctx.fillStyle = tokens.muted;
+          ctx.font = '500 11px ' + font;
+          ctx.fillText('·', mx, metaY);
+          mx += ctx.measureText('·').width + 4;
+        }
+        ctx.fillStyle = tokens.tealDark;
+        ctx.font = '700 10px ' + font;
+        ctx.fillText(tag, mx, metaY);
+      }
+    }
+    ctx.restore();
+  }
+
+  /** One breakdown tile: uppercase label, money value, optional note; Net highlighted. */
+  function drawExportTile(ctx, tokens, tile, x, y, w, h) {
+    const font = tokens.font;
+    roundRectPath(ctx, x, y, w, h, 8);
+    ctx.fillStyle = tile.net ? tokens.tealTint : tokens.surface;
+    ctx.fill();
+    ctx.strokeStyle = tile.net ? tokens.teal : tokens.border;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    if (typeof ctx.letterSpacing === 'string') ctx.letterSpacing = '.8px';
+    ctx.font = '700 10.5px ' + font;
+    ctx.fillStyle = tile.net ? tokens.tealDark : tokens.muted;
+    ctx.fillText(tile.label.toUpperCase(), x + 14, y + 26);
+    if (typeof ctx.letterSpacing === 'string') ctx.letterSpacing = '0px';
+
+    ctx.fillStyle = tile.value > 0 ? tokens.green : tile.value < 0 ? tokens.red : tokens.ink;
+    ctx.font = '700 17.5px ' + font;
+    ctx.fillText(fmtMoney(tile.value), x + 14, y + 56);
+
+    if (tile.note) {
+      ctx.fillStyle = tokens.muted;
+      ctx.font = '500 9px ' + font;
+      ctx.fillText(tile.note, x + 14, y + 74);
+    }
+  }
+
+  /**
+   * The export report, drawn at 2x: header (month title, monthly P&L pill, trade
+   * count + interest basis), the Monday-first calendar with the grid's exact
+   * buckets, tints and money formatting, then the month's P&L breakdown tiles —
+   * Options / Stock / Interest / Dividends / Withholding / Fees / Net P&L, with
+   * the Stock tile carrying its "incl. other stock" note when the bucket has one
+   * — and a generated-on footer. Palette comes from the live CSS tokens.
+   */
+  function drawDailyExportCanvas(ym, agg, accrual) {
+    const tokens = exportTokens();
+    const font = tokens.font;
+    const { weeks, cells } = monthCalendarCells(ym);
+    const totals = monthCalendarTotals(agg, ym);
+    const W = 1400;
+    const pad = 44, gap = 8, cellH = 92, headerH = 88, weekdayH = 28, tileH = 86;
+    const contentW = W - pad * 2;
+    const cellW = (contentW - gap * 6) / 7;
+    const gridH = weeks * cellH + (weeks - 1) * gap;
+    const gridTop = pad + headerH;
+    const gridY = gridTop + weekdayH;
+    const tilesY = gridY + gridH + 66;
+    const H = Math.round(tilesY + tileH + 44 + pad);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = W * EXPORT_SCALE;
+    canvas.height = H * EXPORT_SCALE;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(EXPORT_SCALE, EXPORT_SCALE);
+    ctx.textBaseline = 'alphabetic';
+
+    ctx.fillStyle = tokens.card;
+    ctx.fillRect(0, 0, W, H);
+
+    // header: month + basis line left, monthly P&L pill right
+    ctx.fillStyle = tokens.ink;
+    ctx.font = '700 30px ' + font;
+    ctx.fillText(fullMonthLabel(ym), pad, pad + 30);
+    ctx.fillStyle = tokens.muted;
+    ctx.font = '500 13.5px ' + font;
+    ctx.fillText('Monthly realised P&L' +
+      (totals.count ? ' · ' + totals.count + ' trade' + (totals.count === 1 ? '' : 's') : '') +
+      (accrual ? ' · Accrual basis' : ''), pad, pad + 58);
+    drawExportPill(ctx, tokens, W - pad, pad + 4, totals.total);
+
+    // weekday row (shares the grid's 7 tracks)
+    const weekdays = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    ctx.font = '600 11.5px ' + font;
+    ctx.fillStyle = tokens.muted;
+    ctx.textAlign = 'center';
+    for (let c = 0; c < 7; c++) ctx.fillText(weekdays[c], pad + c * (cellW + gap) + cellW / 2, gridTop + 16);
+    ctx.textAlign = 'left';
+
+    // day cells
+    for (let i = 0; i < cells.length; i++) {
+      const cx = pad + (i % 7) * (cellW + gap);
+      const cy = gridY + Math.floor(i / 7) * (cellH + gap);
+      drawExportCell(ctx, tokens, agg, cells[i], cx, cy, cellW, cellH);
+    }
+
+    // breakdown heading + tiles
+    if (typeof ctx.letterSpacing === 'string') ctx.letterSpacing = '1px';
+    ctx.font = '700 11.5px ' + font;
+    ctx.fillStyle = tokens.muted;
+    ctx.fillText('P&L BREAKDOWN', pad, tilesY - 22);
+    if (typeof ctx.letterSpacing === 'string') ctx.letterSpacing = '0px';
+
+    const tiles = [
+      { label: 'Options', value: totals.options },
+      { label: 'Stock', value: totals.assign, note: totals.otherStockCount ? 'incl. other stock ' + fmtMoney(totals.otherStock) : '' },
+      { label: 'Interest', value: totals.interest },
+      { label: 'Dividends', value: totals.dividends },
+      { label: 'Withholding', value: totals.withholding },
+      { label: 'Fees', value: totals.fees },
+      { label: 'Net P&L', value: totals.total, net: true }
+    ];
+    const tileGap = 8;
+    const tileW = (contentW - tileGap * (tiles.length - 1)) / tiles.length;
+    for (let t = 0; t < tiles.length; t++) {
+      drawExportTile(ctx, tokens, tiles[t], pad + t * (tileW + tileGap), tilesY, tileW, tileH);
+    }
+
+    // footer
+    const footY = tilesY + tileH + 30;
+    ctx.font = '500 10.5px ' + font;
+    ctx.fillStyle = tokens.muted;
+    ctx.fillText('IBKR Realised P&L · monthly calendar', pad, footY);
+    ctx.textAlign = 'right';
+    ctx.fillText('Generated ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }), W - pad, footY);
+    ctx.textAlign = 'left';
+
+    return canvas;
+  }
+
+  /** 'IBKR-calendar-2025-12.png' — shown month + format suffix. */
+  function dailyExportFilename(ym, ext) {
+    return 'IBKR-calendar-' + ym + '.' + ext;
+  }
+
+  /** Save a blob under `filename` (object URL; the anchor never joins the tab order). */
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  /** Live-region text for the export buttons (#dailyExportStatus). */
+  function setDailyExportStatus(text) {
+    const el = byId('dailyExportStatus');
+    if (el) el.textContent = text;
+  }
+
+  /** ASCII-safe PDF literal string (escapes backslash + the ( ) delimiters). */
+  function pdfText(value) {
+    return String(value == null ? '' : value).replace(/[\\()]/g, function (m) { return '\\' + m; });
+  }
+
+  /** 'D:YYYYMMDDHHmmSS±HH'mm'' creation stamp for the Info dictionary. */
+  function pdfDate(date) {
+    const d = date || new Date();
+    const p = function (n) { return String(n).padStart(2, '0'); };
+    const off = -d.getTimezoneOffset();
+    const abs = Math.abs(off);
+    return 'D:' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) +
+      p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()) +
+      (off < 0 ? '-' : '+') + p(Math.floor(abs / 60)) + "'" + p(abs % 60) + "'";
+  }
+
+  /** zlib-deflated bytes (the PDF's /FlateDecode stream) via CompressionStream. */
+  function deflateBytes(u8) {
+    const stream = new CompressionStream('deflate');
+    const writer = stream.writable.getWriter();
+    writer.write(u8);
+    writer.close();
+    return new Response(stream.readable).arrayBuffer().then(function (buf) { return new Uint8Array(buf); });
+  }
+
+  /** Canvas pixels as packed RGB (the PDF image is alpha-free). */
+  function canvasRgbBytes(canvas) {
+    const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+    const out = new Uint8Array(canvas.width * canvas.height * 3);
+    for (let i = 0, j = 0; i < data.length; i += 4) {
+      out[j++] = data[i]; out[j++] = data[i + 1]; out[j++] = data[i + 2];
+    }
+    return out;
+  }
+
+  /**
+   * A minimal single-page A4-landscape PDF around one image XObject. imageBytes
+   * use a PDF-native filter — raw RGB as /FlateDecode or a JPEG as /DCTDecode —
+   * so viewers decode it without any library on our side. Objects: 1 catalog,
+   * 2 pages, 3 page, 4 image, 5 contents, 6 info; xref offsets are byte counts
+   * as the spec requires.
+   */
+  function buildPdfBlob(imageBytes, filter, imgW, imgH, title) {
+    const enc = new TextEncoder();
+    const page = { w: 842, h: 595, margin: 24 }; // A4 landscape, points
+    const parts = [];
+    let length = 0;
+    const offsets = [];
+    const push = function (u8) { parts.push(u8); length += u8.length; };
+    const pushText = function (s) { push(enc.encode(s)); };
+    const object = function (n, body) { offsets[n] = length; pushText(n + ' 0 obj\n' + body + '\nendobj\n'); };
+
+    // '%PDF-1.4' + a binary comment line (the bytes after % keep transports transparent)
+    push(new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34, 0x0A, 0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]));
+
+    object(1, '<< /Type /Catalog /Pages 2 0 R >>');
+    object(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
+    object(3, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + page.w + ' ' + page.h + ']' +
+      ' /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>');
+
+    offsets[4] = length;
+    pushText('4 0 obj\n<< /Type /XObject /Subtype /Image /Width ' + imgW + ' /Height ' + imgH +
+      ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /' + filter + ' /Length ' + imageBytes.length + ' >>\nstream\n');
+    push(imageBytes);
+    pushText('\nendstream\nendobj\n');
+
+    const scale = Math.min((page.w - page.margin * 2) / imgW, (page.h - page.margin * 2) / imgH);
+    const dw = imgW * scale, dh = imgH * scale;
+    const content = 'q ' + dw.toFixed(2) + ' 0 0 ' + dh.toFixed(2) + ' ' +
+      ((page.w - dw) / 2).toFixed(2) + ' ' + ((page.h - dh) / 2).toFixed(2) + ' cm /Im0 Do Q';
+    object(5, '<< /Length ' + enc.encode(content).length + ' >>\nstream\n' + content + '\nendstream');
+    object(6, '<< /Type /Info /Title (' + pdfText(title) + ') /Producer (IBKR Realised P&L dashboard) /CreationDate (' + pdfDate() + ') >>');
+
+    const xrefAt = length;
+    let xref = 'xref\n0 7\n0000000000 65535 f \n';
+    for (let i = 1; i <= 6; i++) xref += String(offsets[i]).padStart(10, '0') + ' 00000 n \n';
+    xref += 'trailer\n<< /Size 7 /Root 1 0 R /Info 6 0 R >>\nstartxref\n' + xrefAt + '\n%%EOF\n';
+    pushText(xref);
+    return new Blob(parts, { type: 'application/pdf' });
+  }
+
+  /**
+   * Wrap a canvas as a single-page PDF: crisp raw-RGB /FlateDecode when
+   * CompressionStream is available, a /DCTDecode JPEG otherwise (getImageData
+   * can also throw on a tainted canvas, so the fallback covers that too).
+   */
+  function canvasToPdfBlob(canvas, title) {
+    function jpegBlob() {
+      const base64 = canvas.toDataURL('image/jpeg', 0.92).split(',')[1] || '';
+      const bin = atob(base64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return buildPdfBlob(bytes, 'DCTDecode', canvas.width, canvas.height, title);
+    }
+    if (typeof CompressionStream === 'function' && typeof Response === 'function') {
+      try {
+        return deflateBytes(canvasRgbBytes(canvas)).then(
+          function (raw) { return buildPdfBlob(raw, 'FlateDecode', canvas.width, canvas.height, title); },
+          jpegBlob
+        );
+      } catch (err) { /* fall through to the JPEG path */ }
+    }
+    return Promise.resolve(jpegBlob());
+  }
+
+  /**
+   * Export the shown month (state.daily.ym, today's month when unset) as a PNG
+   * image or a PDF. Both formats render through drawDailyExportCanvas(), so the
+   * export always matches the grid: same day buckets, tint, income tags and
+   * display currency. The buttons disable while the render is in flight; the
+   * #dailyExportStatus live region reports the outcome without stealing focus.
+   * Returns a promise that settles when the download was handed off (tests).
+   */
+  function exportDailyCalendar(format) {
+    const ym = state.daily.ym && /^\d{4}-\d{2}$/.test(state.daily.ym) ? state.daily.ym : currentYm();
+    const box = byId('dailyExport');
+    const buttons = box && box.querySelectorAll ? box.querySelectorAll('button') : null;
+    const busy = function (on) { if (buttons) for (const b of buttons) b.disabled = !!on; };
+    const kind = format === 'pdf' ? 'pdf' : 'png';
+    busy(true);
+    let pending;
+    try {
+      const { agg, accrual } = dailyAggregate();
+      const canvas = drawDailyExportCanvas(ym, agg, accrual);
+      if (kind === 'pdf') {
+        pending = canvasToPdfBlob(canvas, 'Monthly P&L calendar - ' + fullMonthLabel(ym))
+          .then(function (blob) { downloadBlob(blob, dailyExportFilename(ym, 'pdf')); });
+      } else {
+        pending = new Promise(function (resolve, reject) {
+          canvas.toBlob(function (blob) {
+            if (!blob) { reject(new Error('Canvas render failed')); return; }
+            downloadBlob(blob, dailyExportFilename(ym, 'png'));
+            resolve();
+          }, 'image/png');
+        });
+      }
+    } catch (err) {
+      pending = Promise.reject(err);
+    }
+    return pending.then(function () {
+      setDailyExportStatus((kind === 'pdf' ? 'PDF' : 'PNG') + ' calendar exported for ' + fullMonthLabel(ym));
+    }, function (err) {
+      setDailyExportStatus('Calendar export failed');
+      if (typeof console !== 'undefined' && console.error) console.error('Calendar export failed:', err);
+    }).then(function () { busy(false); });
+  }
+
+  /** Delegated #dailyExport click → exportDailyCalendar(data-format). */
+  function onDailyExportClick(e) {
+    const btn = e.target && e.target.closest ? e.target.closest('#dailyExport button[data-format]') : null;
+    if (!btn) return;
+    exportDailyCalendar(btn.getAttribute('data-format') === 'pdf' ? 'pdf' : 'png');
   }
 
   function renderTables(months) {
@@ -3472,6 +3965,8 @@ const IBKR = (function () {
     }
     listen(byId('dailyGrid'), 'click', onDailyCellClick);
     listen(byId('dailyGrid'), 'keydown', onDailyGridKeydown);
+    // calendar export: delegated over the PNG/PDF buttons (#dailyExport)
+    listen(byId('dailyExport'), 'click', onDailyExportClick);
     listen(byId('dailyDetailTop'), 'click', onDailyDetailTop);
     // interest rows carry data-month too: the same click selects the month
     listen(pickById(['interestBody', 'interestTableBody']), 'click', onRowClick);
@@ -3567,6 +4062,7 @@ const IBKR = (function () {
     parseCsv, detectFormat, parseFlex, parseActivityStatement, parseCsvText,
     aggregateByMonth, classify, cashCategory, isAssignmentCode, monthKey, monthLabel, rootOf,
     dayKey, aggregateByDay, renderDaily, renderDailyDetail, dayLabel,
+    dailyAggregate, monthCalendarCells, exportDailyCalendar, drawDailyExportCanvas,
     pickerYm, openDailyPicker,
     tradePasses, prepareTradeFilter, normalizeScope, scopeLabel,
     fmtMoney, fmtCompact, disp, currencyMode, currencySymbol, init, loadText, clearAll, renderAll, renderBreakdown, incomeOf, incomeTipText, state,

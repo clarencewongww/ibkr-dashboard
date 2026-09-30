@@ -790,8 +790,37 @@
 
     <section class="card cal-card" id="dailyCard" aria-labelledby="dailyTitle">
       <div class="card__head">
-        <div class="card__head-copy">
+        <div class="card__head-copy cal-head-copy">
           <h2 class="card__title cal-title" id="dailyTitle">Daily P&amp;L</h2>
+          <!-- Calendar export: renders the shown month's calendar + its P&L
+               breakdown onto a canvas and downloads it as a PNG image or a
+               single-page PDF (app.js draws and builds both offline — no
+               library, no network). Hidden until the file has data; the two
+               buttons are the format choice. #dailyExportStatus is the
+               visually-hidden live region that reports success/failure. -->
+          <div id="dailyExport" class="cal-export" role="group" aria-label="Export the calendar" hidden>
+            <button id="dailyExportPng" class="btn btn--outline btn--sm" type="button" data-format="png"
+                    title="Download the calendar as a PNG image"
+                    aria-label="Download the calendar as a PNG image">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              PNG
+            </button>
+            <button id="dailyExportPdf" class="btn btn--outline btn--sm" type="button" data-format="pdf"
+                    title="Download the calendar as a PDF"
+                    aria-label="Download the calendar as a PDF">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              PDF
+            </button>
+          </div>
+          <span id="dailyExportStatus" class="visually-hidden" role="status"></span>
         </div>
         <div class="card__head-actions">
           <span class="cal-pill">Monthly P&amp;L: <strong id="dailyPill" class="num">—</strong></span>

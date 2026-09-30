@@ -1070,6 +1070,26 @@ body:has(#fileInput:focus-visible) .hero label[for="fileInput"] { outline-color:
    because the month is the card's subject, mirroring the reference calendar. */
 .cal-title { font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
 
+/* title + export cluster share the head's copy block: the month stays the subject,
+   the two compact PNG / PDF buttons sit beside it (and wrap under it in a very
+   tight head). #dailyExport ships [hidden] and app.js reveals it once the file
+   has data. */
+.cal-head-copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.cal-export {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cal-export .btn { gap: 6px; }
+.cal-export .icon { width: 13px; height: 13px; }
+
 /* "Monthly P&L: +$2,775.00" pill in the card head */
 .cal-pill {
   display: inline-flex;
